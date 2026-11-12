@@ -29,11 +29,12 @@ class RouterRepository {
         // 1. جلب البيانات العامة المتاحة بدون تسجيل دخول (السرعة اللحظية + المزود + الاستهلاك)
         fetchPublicStats(updated, onLog)
 
-        // 2. إذا توفرت كلمة مرور نقوم بالمصادقة وجلب الأجهزة
+        // 2. إذا توفرت كلمة مرور نقوم بالمصادقة وجلب الأجهزة وحالة الحظر
         if (updated.password.isNotBlank()) {
             val loggedIn = authenticateHuawei(updated, onLog)
             if (loggedIn) {
                 fetchHosts(updated, onLog)
+                fetchHuaweiBlockList(updated, onLog)
             }
         }
         updated
@@ -237,9 +238,83 @@ class RouterRepository {
         }
     }
 
+    private fun fetchHuaweiBlockList(profile: RouterProfile, onLog: (String) -> Unit) {
+        try {
+            val req = Request.Builder()
+                .url("http://${profile.routerIP}/api/wlan/multi-macfilter-settings")
+                .addHeader("Cookie", currentSessionCookie.orEmpty())
+                .addHeader("__RequestVerificationToken", currentVerificationToken.orEmpty())
+                .build()
+
+            client.newCall(req).execute().use { res ->
+                val xml = res.body?.string().orEmpty()
+                val blockedMacs = mutableSetOf<String>()
+                for (i in 0 until 10) {
+                    val mac = extractTag("WifiMacFilterMac$i", xml)
+                    if (!mac.isNullOrBlank()) {
+                        blockedMacs.add(mac.replace("-", ":").uppercase())
+                    }
+                }
+                for (dev in profile.devices) {
+                    val cleanMac = dev.macAddress.replace("-", ":").uppercase()
+                    dev.isBlocked = blockedMacs.contains(cleanMac)
+                }
+                if (blockedMacs.isNotEmpty()) {
+                    onLog("تمت مزامنة قائمة الحظر: ${blockedMacs.size} جهاز محظور")
+                }
+            }
+        } catch (e: Exception) {
+            onLog("تنبيه جلب قائمة الحظر: ${e.message}")
+        }
+    }
+
+    private fun getFreshHuaweiToken(routerIP: String): String? {
+        try {
+            // 1. تجربة api/webserver/token
+            val req1 = Request.Builder().url("http://$routerIP/api/webserver/token").build()
+            client.newCall(req1).execute().use { res ->
+                val body = res.body?.string().orEmpty()
+                val tok = extractTag("token", body)
+                res.header("Set-Cookie")?.let { currentSessionCookie = it.substringBefore(";").trim() }
+                if (!tok.isNullOrBlank()) {
+                    currentVerificationToken = tok
+                    return tok
+                }
+            }
+        } catch (_: Exception) {}
+
+        try {
+            // 2. تجربة api/webserver/SesTokInfo
+            val req2 = Request.Builder().url("http://$routerIP/api/webserver/SesTokInfo").build()
+            client.newCall(req2).execute().use { res ->
+                val body = res.body?.string().orEmpty()
+                val tok = extractTag("TokInfo", body)
+                val ses = extractTag("SesInfo", body)
+                if (!ses.isNullOrBlank()) {
+                    currentSessionCookie = if (ses.startsWith("SessionID=")) ses else "SessionID=$ses"
+                }
+                res.header("Set-Cookie")?.let { currentSessionCookie = it.substringBefore(";").trim() }
+                if (!tok.isNullOrBlank()) {
+                    currentVerificationToken = tok
+                    return tok
+                }
+            }
+        } catch (_: Exception) {}
+        return currentVerificationToken
+    }
+
     suspend fun toggleBlockDevice(profile: RouterProfile, device: NetworkDevice, block: Boolean, onLog: (String) -> Unit): Boolean = withContext(Dispatchers.IO) {
         try {
-            val blockedList = profile.devices.filter { it.macAddress != device.macAddress && it.isBlocked }.toMutableList()
+            // ضمان وجود جلسة نشطة
+            if (currentSessionCookie.isNullOrBlank()) {
+                onLog("جاري تسجيل الدخول أولاً لتنفيذ أمر الحظر...")
+                authenticateHuawei(profile, onLog)
+            }
+
+            // جلب Token طازج لطلب الـ POST
+            val freshToken = getFreshHuaweiToken(profile.routerIP) ?: currentVerificationToken.orEmpty()
+
+            val blockedList = profile.devices.filter { it.macAddress.replace("-", ":").uppercase() != device.macAddress.replace("-", ":").uppercase() && it.isBlocked }.toMutableList()
             if (block) blockedList.add(device)
 
             val filterStatus = if (blockedList.isEmpty()) 0 else 2
@@ -247,8 +322,8 @@ class RouterRepository {
             blockedList.take(10).forEachIndexed { i, dev ->
                 val mac = dev.macAddress.replace("-", ":").uppercase()
                 val name = dev.displayName.replace(" ", "_")
-                entriesXml.append("<WifiMacFilterMac$i>$mac</WifiMacFilterMac$i>\n")
-                entriesXml.append("<wifihostname$i>$name</wifihostname$i>\n")
+                entriesXml.append("                    <WifiMacFilterMac$i>$mac</WifiMacFilterMac$i>\n")
+                entriesXml.append("                    <wifihostname$i>$name</wifihostname$i>\n")
             }
 
             val xml = """
@@ -258,8 +333,7 @@ class RouterRepository {
                         <Ssid>
                             <Index>0</Index>
                             <WifiMacFilterStatus>$filterStatus</WifiMacFilterStatus>
-                            $entriesXml
-                        </Ssid>
+$entriesXml                        </Ssid>
                     </Ssids>
                 </request>
             """.trimIndent()
@@ -268,16 +342,19 @@ class RouterRepository {
                 .url("http://${profile.routerIP}/api/wlan/multi-macfilter-settings")
                 .post(xml.toRequestBody("application/xml".toMediaType()))
                 .addHeader("Cookie", currentSessionCookie.orEmpty())
-                .addHeader("__RequestVerificationToken", currentVerificationToken.orEmpty())
+                .addHeader("__RequestVerificationToken", freshToken)
                 .build()
 
             client.newCall(req).execute().use { res ->
                 res.header("__RequestVerificationToken")?.let { currentVerificationToken = it }
                 val body = res.body?.string().orEmpty()
-                val ok = body.contains("<response>OK</response>") || res.isSuccessful
+                val ok = body.contains("<response>OK</response>") || (!body.contains("<error>") && res.isSuccessful)
                 if (ok) {
                     device.isBlocked = block
-                    onLog("${if (block) "تم حظر" else "تم إلغاء حظر"}: ${device.displayName}")
+                    onLog("✅ ${if (block) "تم حظر وفصل" else "تم إلغاء حظر"}: ${device.displayName}")
+                } else {
+                    val code = extractTag("code", body) ?: "غير معروف"
+                    onLog("❌ فشل أمر الحظر من الراوتر (كود: $code)")
                 }
                 ok
             }
