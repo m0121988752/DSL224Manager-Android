@@ -21,6 +21,8 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalLayoutDirection
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.input.PasswordVisualTransformation
+import androidx.compose.ui.text.input.VisualTransformation
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.LayoutDirection
 import androidx.compose.ui.unit.dp
@@ -66,29 +68,18 @@ enum class MainTab(val title: String, val icon: androidx.compose.ui.graphics.vec
 @Composable
 fun MainScreen(repo: RouterRepository) {
     val context = LocalContext.current
+    val storage = remember { RouterStorage(context) }
     val webUI = remember { WebUIFallbackService(context) }
     val scope = rememberCoroutineScope()
 
-    // قائمة الراوترات وحالة الراوتر النشط
-    var routers by remember {
-        mutableStateOf(
-            listOf(
-                RouterProfile(
-                    name = "راوتر Huawei 4G",
-                    routerIP = "192.168.1.1",
-                    username = "admin",
-                    password = "",
-                    firmware = FirmwareType.HUAWEI_B311,
-                    totalPlanGB = 140.0
-                )
-            )
-        )
-    }
-    var activeRouterIndex by remember { mutableStateOf(0) }
+    // تحميل الراوترات المحفوظة محلياً (SharedPreferences)
+    val initialData = remember { storage.loadRouters() }
+    var routers by remember { mutableStateOf(initialData.first) }
+    var activeRouterIndex by remember { mutableStateOf(initialData.second) }
     val activeRouter = routers.getOrElse(activeRouterIndex) { routers.first() }
 
     var selectedTab by remember { mutableStateOf(MainTab.DASHBOARD) }
-    var logs by remember { mutableStateOf(listOf("مرحباً بك في DSL224Manager", "جاهز للاتصال والتحكم في الراوتر")) }
+    var logs by remember { mutableStateOf(listOf("مرحباً بك في DSL224Manager", "تم استرجاع الإعدادات المحفوظة بنجاح")) }
     var isLoading by remember { mutableStateOf(false) }
 
     // حوار إعادة تسمية الجهاز
@@ -98,6 +89,9 @@ fun MainScreen(repo: RouterRepository) {
     // حوار متصفح أزرار WebUI
     var showWebUIDialog by remember { mutableStateOf(false) }
     var lastScrapeResult by remember { mutableStateOf<WebUIScrapeResult?>(null) }
+
+    // حوار التخصيص المرئي للكشط بدون كود (No-Code Scraper Customization)
+    var showNoCodeDialog by remember { mutableStateOf(false) }
 
     fun log(msg: String) {
         logs = listOf(msg) + logs.take(60)
@@ -109,6 +103,7 @@ fun MainScreen(repo: RouterRepository) {
                 it[activeRouterIndex] = updated
             }
         }
+        storage.saveRouters(routers, activeRouterIndex)
     }
 
     fun refreshActiveRouter() {
@@ -146,6 +141,14 @@ fun MainScreen(repo: RouterRepository) {
                     }
                 },
                 actions = {
+                    // زر التخصيص بدون كود (No-Code Scraper Customizer)
+                    IconButton(
+                        onClick = { showNoCodeDialog = true },
+                        enabled = !isLoading
+                    ) {
+                        Icon(Icons.Default.Tune, contentDescription = "تخصيص الكشط No-Code", tint = Color(0xFF30D158))
+                    }
+
                     // زر فحص وكشط أزرار الويب
                     IconButton(
                         onClick = {
@@ -175,7 +178,10 @@ fun MainScreen(repo: RouterRepository) {
                         onClick = {
                             scope.launch {
                                 log("جاري إرسال أمر إعادة التشغيل (Reboot) للراوتر...")
-                                val (ok, msg) = webUI.pressButton(semanticAction = SemanticButtonAction.REBOOT)
+                                val (ok, msg) = webUI.pressButton(
+                                    selector = activeRouter.customRebootButtonSelector.takeIf { it.isNotBlank() },
+                                    semanticAction = SemanticButtonAction.REBOOT
+                                )
                                 log(if (ok) "✅ $msg" else "❌ $msg")
                             }
                         },
@@ -247,22 +253,28 @@ fun MainScreen(repo: RouterRepository) {
                         editingDevice = dev
                         newCustomName = dev.displayName
                     },
-                    onRefresh = { refreshActiveRouter() }
+                    onRefresh = { refreshActiveRouter() },
+                    onOpenNoCode = { showNoCodeDialog = true }
                 )
                 MainTab.ROUTERS -> RoutersTab(
                     routers = routers,
                     activeIndex = activeRouterIndex,
-                    onSelect = { activeRouterIndex = it },
+                    onSelect = {
+                        activeRouterIndex = it
+                        storage.saveRouters(routers, it)
+                    },
                     onAddRouter = {
                         val newR = RouterProfile(name = "راوتر جديد ${routers.size + 1}")
                         routers = routers + newR
                         activeRouterIndex = routers.lastIndex
-                        log("تمت إضافة راوتر جديد")
+                        storage.saveRouters(routers, activeRouterIndex)
+                        log("تمت إضافة راوتر جديد وحفظه")
                     },
                     onDeleteRouter = { idx ->
                         if (routers.size > 1) {
                             routers = routers.filterIndexed { i, _ -> i != idx }
                             if (activeRouterIndex >= routers.size) activeRouterIndex = routers.lastIndex
+                            storage.saveRouters(routers, activeRouterIndex)
                             log("تم حذف الراوتر")
                         }
                     }
@@ -272,9 +284,10 @@ fun MainScreen(repo: RouterRepository) {
                     router = activeRouter,
                     onSave = { updated ->
                         updateActiveRouter(updated)
-                        log("تم حفظ بيانات الراوتر بنجاح")
+                        log("تم حفظ بيانات الراوتر بنجاح في الهاتف")
                     },
-                    onOpenWebUI = { showWebUIDialog = true }
+                    onOpenWebUI = { showWebUIDialog = true },
+                    onOpenNoCode = { showNoCodeDialog = true }
                 )
             }
         }
@@ -349,7 +362,10 @@ fun MainScreen(repo: RouterRepository) {
                                 onClick = {
                                     scope.launch {
                                         log("جاري إرسال إعادة التشغيل...")
-                                        val (ok, msg) = webUI.pressButton(semanticAction = SemanticButtonAction.REBOOT)
+                                        val (ok, msg) = webUI.pressButton(
+                                            selector = activeRouter.customRebootButtonSelector.takeIf { it.isNotBlank() },
+                                            semanticAction = SemanticButtonAction.REBOOT
+                                        )
                                         log(if (ok) "✅ $msg" else "❌ $msg")
                                         showWebUIDialog = false
                                     }
@@ -426,6 +442,218 @@ fun MainScreen(repo: RouterRepository) {
             }
         )
     }
+
+    // حوار تخصيص الكشط المرئي بدون كود (No-Code Scraper Builder UI)
+    if (showNoCodeDialog) {
+        NoCodeScraperDialog(
+            router = activeRouter,
+            onDismiss = { showNoCodeDialog = false },
+            onSave = { updated ->
+                updateActiveRouter(updated)
+                showNoCodeDialog = false
+                log("✅ تم حفظ إعدادات الكشط المخصصة (No-Code Config)")
+            },
+            onTestScrape = { testProfile ->
+                scope.launch {
+                    log("جاري اختبار محددات الكشط المخصصة...")
+                    val res = webUI.scrapeCurrentPage(testProfile)
+                    lastScrapeResult = res
+                    if (res.wanBytes != null && res.wanBytes > 0) {
+                        val gb = res.wanBytes.toDouble() / (1024.0 * 1024.0 * 1024.0)
+                        log("✅ نجح الاختبار! تم استخراج: ${String.format("%.2f", gb)} GB")
+                    } else {
+                        log("⚠️ تم فحص الصفحة ولكن لم يتم التقاط رقم بايتات مناسب بالمحدد الحالي")
+                    }
+                }
+            }
+        )
+    }
+}
+
+// ==================== حوار تخصيص الكشط بدون كود (No-Code Scraper Dialog) ====================
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+fun NoCodeScraperDialog(
+    router: RouterProfile,
+    onDismiss: () -> Unit,
+    onSave: (RouterProfile) -> Unit,
+    onTestScrape: (RouterProfile) -> Unit
+) {
+    var usageSelector by remember { mutableStateOf(router.customUsageSelector) }
+    var usageRegex by remember { mutableStateOf(router.customUsageRegex) }
+    var usageUnit by remember { mutableStateOf(router.customUsageUnit) }
+    var deviceTableSelector by remember { mutableStateOf(router.customDeviceTableSelector) }
+    var rebootBtnSelector by remember { mutableStateOf(router.customRebootButtonSelector) }
+    var webPath by remember { mutableStateOf(router.webUIPath) }
+
+    // قوالب سريعة جاهزة بدون كود (Quick Presets)
+    val presets = listOf(
+        Triple("Huawei Flybox (B311)", "#devicemanagement_page, div.access_switch", "#reboot_apply_button"),
+        Triple("D-Link DSL-224 (ME_1.10)", "table.table_traffic, tr", "input[name='reboot']"),
+        Triple("Realtek Boaform Generic", "form#wlan, tr", "#btn_reboot")
+    )
+
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = {
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Icon(Icons.Default.Tune, contentDescription = null, tint = Color(0xFF30D158))
+                Spacer(Modifier.width(8.dp))
+                Text("مُخصّص الكشط المرئي (No-Code)", fontWeight = FontWeight.Bold, fontSize = 16.sp)
+            }
+        },
+        text = {
+            LazyColumn(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .heightIn(max = 480.dp),
+                verticalArrangement = Arrangement.spacedBy(10.dp)
+            ) {
+                item {
+                    Text(
+                        "حدد عناصر الصفحة ومسارها بدون كتابة كود برمجياً لكشط أي راوتر مخصص:",
+                        fontSize = 12.sp,
+                        color = Color.Gray
+                    )
+                }
+
+                // قوالب جاهزة بلمسة واحدة
+                item {
+                    Text("قوالب سريعة جاهزة:", fontWeight = FontWeight.Bold, fontSize = 12.sp)
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.spacedBy(6.dp)
+                    ) {
+                        presets.forEach { (presetName, devSel, rebSel) ->
+                            SuggestionChip(
+                                onClick = {
+                                    deviceTableSelector = devSel
+                                    rebootBtnSelector = rebSel
+                                },
+                                label = { Text(presetName.substringBefore(" "), fontSize = 10.sp) }
+                            )
+                        }
+                    }
+                }
+
+                item {
+                    OutlinedTextField(
+                        value = webPath,
+                        onValueChange = { webPath = it },
+                        label = { Text("مسار الصفحة الهدف (URL Path)") },
+                        placeholder = { Text("مثال: home/index.html أو tc.html") },
+                        singleLine = true,
+                        modifier = Modifier.fillMaxWidth()
+                    )
+                }
+
+                item {
+                    OutlinedTextField(
+                        value = usageSelector,
+                        onValueChange = { usageSelector = it },
+                        label = { Text("محدد عداد الاستهلاك (CSS Selector)") },
+                        placeholder = { Text("مثال: #traffic_val أو span.bytes") },
+                        singleLine = true,
+                        modifier = Modifier.fillMaxWidth()
+                    )
+                }
+
+                item {
+                    OutlinedTextField(
+                        value = usageRegex,
+                        onValueChange = { usageRegex = it },
+                        label = { Text("نمط الاستخراج (Regex Match)") },
+                        placeholder = { Text("مثال: ([0-9\\.]+)\\s*GB") },
+                        singleLine = true,
+                        modifier = Modifier.fillMaxWidth()
+                    )
+                }
+
+                // اختيار وحدة القراءة
+                item {
+                    Text("وحدة القراءة:", fontSize = 11.sp, color = Color.Gray)
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.spacedBy(8.dp)
+                    ) {
+                        listOf("Auto", "GB", "MB", "Bytes").forEach { unit ->
+                            FilterChip(
+                                selected = usageUnit == unit,
+                                onClick = { usageUnit = unit },
+                                label = { Text(unit, fontSize = 11.sp) }
+                            )
+                        }
+                    }
+                }
+
+                item {
+                    OutlinedTextField(
+                        value = deviceTableSelector,
+                        onValueChange = { deviceTableSelector = it },
+                        label = { Text("محدد جدول الأجهزة (Devices Table)") },
+                        placeholder = { Text("مثال: #dev_table_content أو tr.device") },
+                        singleLine = true,
+                        modifier = Modifier.fillMaxWidth()
+                    )
+                }
+
+                item {
+                    OutlinedTextField(
+                        value = rebootBtnSelector,
+                        onValueChange = { rebootBtnSelector = it },
+                        label = { Text("محدد زر إعادة التشغيل (Reboot Selector)") },
+                        placeholder = { Text("مثال: #reboot_apply_button") },
+                        singleLine = true,
+                        modifier = Modifier.fillMaxWidth()
+                    )
+                }
+
+                item {
+                    Button(
+                        onClick = {
+                            val testProfile = router.copy(
+                                webUIPath = webPath.trim(),
+                                customUsageSelector = usageSelector.trim(),
+                                customUsageRegex = usageRegex.trim(),
+                                customUsageUnit = usageUnit,
+                                customDeviceTableSelector = deviceTableSelector.trim(),
+                                customRebootButtonSelector = rebootBtnSelector.trim()
+                            )
+                            onTestScrape(testProfile)
+                        },
+                        modifier = Modifier.fillMaxWidth(),
+                        colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.surfaceVariant)
+                    ) {
+                        Icon(Icons.Default.PlayArrow, contentDescription = null, tint = Color(0xFF30D158))
+                        Spacer(Modifier.width(6.dp))
+                        Text("تجربة واختبار الكشط الآن", fontSize = 12.sp, color = Color.White)
+                    }
+                }
+            }
+        },
+        confirmButton = {
+            Button(
+                onClick = {
+                    val updated = router.copy(
+                        webUIPath = webPath.trim(),
+                        customUsageSelector = usageSelector.trim(),
+                        customUsageRegex = usageRegex.trim(),
+                        customUsageUnit = usageUnit,
+                        customDeviceTableSelector = deviceTableSelector.trim(),
+                        customRebootButtonSelector = rebootBtnSelector.trim()
+                    )
+                    onSave(updated)
+                }
+            ) {
+                Text("حفظ الإعدادات")
+            }
+        },
+        dismissButton = {
+            TextButton(onClick = onDismiss) {
+                Text("إلغاء")
+            }
+        }
+    )
 }
 
 // ==================== تبويب الشبكة والأجهزة (Dashboard) ====================
@@ -435,7 +663,8 @@ fun DashboardTab(
     isLoading: Boolean,
     onToggleBlock: (NetworkDevice, Boolean) -> Unit,
     onRenameDevice: (NetworkDevice) -> Unit,
-    onRefresh: () -> Unit
+    onRefresh: () -> Unit,
+    onOpenNoCode: () -> Unit
 ) {
     var searchQuery by remember { mutableStateOf("") }
     var filterMode by remember { mutableStateOf(0) } // 0: الكل, 1: متصل, 2: محظور
@@ -891,12 +1120,14 @@ fun StatRow(label: String, value: String) {
 fun SettingsTab(
     router: RouterProfile,
     onSave: (RouterProfile) -> Unit,
-    onOpenWebUI: () -> Unit
+    onOpenWebUI: () -> Unit,
+    onOpenNoCode: () -> Unit
 ) {
     var name by remember(router) { mutableStateOf(router.name) }
     var ip by remember(router) { mutableStateOf(router.routerIP) }
     var username by remember(router) { mutableStateOf(router.username) }
     var password by remember(router) { mutableStateOf(router.password) }
+    var passwordVisible by remember { mutableStateOf(false) }
     var totalPlanGB by remember(router) { mutableStateOf(router.totalPlanGB.toInt().toString()) }
     var enableFallback by remember(router) { mutableStateOf(router.enableWebUIFallback) }
 
@@ -938,13 +1169,26 @@ fun SettingsTab(
                         singleLine = true,
                         modifier = Modifier.fillMaxWidth()
                     )
+
+                    // حقل كلمة المرور مع إمكانية الإظهار والإخفاء (Show / Hide Password)
                     OutlinedTextField(
                         value = password,
                         onValueChange = { password = it },
                         label = { Text("كلمة المرور") },
                         singleLine = true,
+                        visualTransformation = if (passwordVisible) VisualTransformation.None else PasswordVisualTransformation(),
+                        trailingIcon = {
+                            IconButton(onClick = { passwordVisible = !passwordVisible }) {
+                                Icon(
+                                    imageVector = if (passwordVisible) Icons.Default.Visibility else Icons.Default.VisibilityOff,
+                                    contentDescription = if (passwordVisible) "إخفاء كلمة المرور" else "إظهار كلمة المرور",
+                                    tint = Color.Gray
+                                )
+                            }
+                        },
                         modifier = Modifier.fillMaxWidth()
                     )
+
                     OutlinedTextField(
                         value = totalPlanGB,
                         onValueChange = { totalPlanGB = it },
@@ -986,12 +1230,40 @@ fun SettingsTab(
                         modifier = Modifier.fillMaxWidth(),
                         shape = RoundedCornerShape(10.dp)
                     ) {
-                        Text("حفظ التغييرات", fontWeight = FontWeight.Bold)
+                        Text("حفظ التغييرات في الهاتف", fontWeight = FontWeight.Bold)
                     }
                 }
             }
         }
 
+        // بطاقة تخصيص الكشط No-Code
+        item {
+            Card(
+                modifier = Modifier.fillMaxWidth(),
+                shape = RoundedCornerShape(16.dp),
+                colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface)
+            ) {
+                Column(modifier = Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        Icon(Icons.Default.Tune, contentDescription = null, tint = Color(0xFF30D158))
+                        Spacer(Modifier.width(8.dp))
+                        Text("مُخصّص الكشط المرئي (No-Code Scraper UI)", fontWeight = FontWeight.Bold, fontSize = 14.sp)
+                    }
+                    Text("تخصيص محددات الاستهلاك، الأجهزة، والأزرار بدون كتابة كود لأي نوع راوتر.", fontSize = 12.sp, color = Color.Gray)
+                    Button(
+                        onClick = onOpenNoCode,
+                        modifier = Modifier.fillMaxWidth(),
+                        colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF1E3A24))
+                    ) {
+                        Icon(Icons.Default.EditRoad, contentDescription = null, tint = Color(0xFF30D158))
+                        Spacer(Modifier.width(8.dp))
+                        Text("تخصيص محددات الكشط (No-Code)", color = Color.White)
+                    }
+                }
+            }
+        }
+
+        // بطاقة لوحة أزرار WebUI
         item {
             Card(
                 modifier = Modifier.fillMaxWidth(),

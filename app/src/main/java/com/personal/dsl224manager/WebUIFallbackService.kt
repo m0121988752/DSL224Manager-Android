@@ -20,7 +20,7 @@ import kotlin.coroutines.resume
 
 /**
  * محرك الكشط والتحكم البديل عبر متصفح الويب (Unified Android WebUI Fallback Engine)
- * مطابق 100% لخوارزمية iOS في تحليل الـ DOM واستخراج العدادات وضغط الأزرار
+ * يدعم التخصيص المرئي بدون كود (No-Code Scraper Customization)
  */
 class WebUIFallbackService(private val context: Context) {
 
@@ -66,8 +66,8 @@ class WebUIFallbackService(private val context: Context) {
         // محاولة تسجيل الدخول التلقائي إذا كان النموذج متاحاً
         attemptAutoLogin(profile.username, profile.password, wv)
 
-        // كشط محتويات الصفحة بعد التحميل
-        scrapeCurrentPage(wv)
+        // كشط محتويات الصفحة مع مراعاة إعدادات No-Code المخصصة
+        scrapeCurrentPage(profile, wv)
     }
 
     private suspend fun loadUrlAsync(wv: WebView, url: String, timeoutMs: Long): Boolean = withTimeoutOrNull(timeoutMs) {
@@ -98,10 +98,7 @@ class WebUIFallbackService(private val context: Context) {
                 '#f_username',
                 'input[name="f_username"]',
                 'input[name*="user" i]',
-                'input[name*="login" i]',
                 'input[id*="user" i]',
-                '#username',
-                '#txtUser',
                 'input[type="text"]'
             ];
             var passSelectors = [
@@ -109,44 +106,38 @@ class WebUIFallbackService(private val context: Context) {
                 'input[name="f_password"]',
                 'input[type="password"]',
                 'input[name*="pass" i]',
-                'input[name*="pwd" i]',
-                'input[id*="pass" i]',
-                '#password',
-                '#txtPwd'
+                'input[id*="pass" i]'
             ];
 
             var userEl = null;
             for (var i = 0; i < userSelectors.length; i++) {
                 var el = document.querySelector(userSelectors[i]);
-                if (el) { userEl = el; break; }
+                if (el && el.offsetParent !== null) { userEl = el; break; }
             }
 
             var passEl = null;
             for (var j = 0; j < passSelectors.length; j++) {
                 var p = document.querySelector(passSelectors[j]);
-                if (p) { passEl = p; break; }
+                if (p && p.offsetParent !== null) { passEl = p; break; }
             }
 
-            if (!userEl && !passEl) {
-                return JSON.stringify({ attempted: false });
-            }
+            if (!passEl) return JSON.stringify({ attempted: false, reason: 'no_password_field' });
 
-            var userToFill = "$escapedUser".length > 0 ? "$escapedUser" : "admin";
-            if (userEl) {
-                userEl.value = userToFill;
+            if (userEl && "$escapedUser".length > 0) {
+                userEl.value = "$escapedUser";
                 userEl.dispatchEvent(new Event('input', { bubbles: true }));
                 userEl.dispatchEvent(new Event('change', { bubbles: true }));
             }
 
-            if (passEl && "$escapedPass".length > 0) {
-                passEl.value = "$escapedPass";
-                passEl.dispatchEvent(new Event('input', { bubbles: true }));
-                passEl.dispatchEvent(new Event('change', { bubbles: true }));
-            }
+            passEl.value = "$escapedPass";
+            passEl.dispatchEvent(new Event('input', { bubbles: true }));
+            passEl.dispatchEvent(new Event('change', { bubbles: true }));
 
             var submitSelectors = [
                 '#f_submit_login',
-                '#f_submit',
+                '#login',
+                '#btnLogin',
+                '#submit',
                 'input[type="submit"]',
                 'button[type="submit"]',
                 '#login_btn',
@@ -185,24 +176,76 @@ class WebUIFallbackService(private val context: Context) {
         }
     }
 
-    suspend fun scrapeCurrentPage(customWv: WebView? = null): WebUIScrapeResult = withContext(Dispatchers.Main) {
+    suspend fun scrapeCurrentPage(profile: RouterProfile? = null, customWv: WebView? = null): WebUIScrapeResult = withContext(Dispatchers.Main) {
         val wv = customWv ?: getOrCreateWebView()
+
+        val customUsageSelector = (profile?.customUsageSelector ?: "").replace("\"", "\\\"")
+        val customUsageRegex = (profile?.customUsageRegex ?: "").replace("\"", "\\\"").replace("\\", "\\\\")
+        val customUsageUnit = profile?.customUsageUnit ?: "Auto"
+        val customDeviceSelector = (profile?.customDeviceTableSelector ?: "").replace("\"", "\\\"")
+        val customRebootSelector = (profile?.customRebootButtonSelector ?: "").replace("\"", "\\\"")
+
         val js = """
         (function() {
             var bodyText = document.body ? document.body.innerText : '';
             var title = document.title || '';
             var currentUrl = window.location.href;
 
-            // 1. استخراج العداد التراكمي
             var foundBytes = null;
-            var huaweiUsage = bodyText.match(/محلي الاستخدام\s*([0-9\.]+)\s*(GB|MB)/i) || bodyText.match(/([0-9\.]+)\s*GB/i);
-            if (huaweiUsage) {
-                var numH = parseFloat(huaweiUsage[1]);
-                var unitH = huaweiUsage[2].toUpperCase();
-                if (unitH.indexOf('GB') !== -1) {
-                    foundBytes = Math.round(numH * 1024 * 1024 * 1024);
-                } else {
-                    foundBytes = Math.round(numH * 1024 * 1024);
+
+            // أ) فحص محدد الـ No-Code المخصص أولاً إذا كان مدخلاً
+            var customSel = "$customUsageSelector";
+            var customReg = "$customUsageRegex";
+            var customUnit = "$customUsageUnit";
+
+            if (customSel.length > 0) {
+                try {
+                    var el = document.querySelector(customSel);
+                    if (el) {
+                        var textVal = el.innerText || el.textContent || el.value || '';
+                        if (customReg.length > 0) {
+                            var r = new RegExp(customReg, 'i');
+                            var m = textVal.match(r);
+                            if (m && m[1]) {
+                                var parsed = parseFloat(m[1].replace(/,/g, ''));
+                                if (!isNaN(parsed)) {
+                                    if (customUnit === 'GB') foundBytes = Math.round(parsed * 1024 * 1024 * 1024);
+                                    else if (customUnit === 'MB') foundBytes = Math.round(parsed * 1024 * 1024);
+                                    else if (customUnit === 'Bytes') foundBytes = Math.round(parsed);
+                                    else {
+                                        // Auto unit detection
+                                        if (textVal.toUpperCase().indexOf('GB') !== -1) foundBytes = Math.round(parsed * 1024 * 1024 * 1024);
+                                        else if (textVal.toUpperCase().indexOf('MB') !== -1) foundBytes = Math.round(parsed * 1024 * 1024);
+                                        else foundBytes = Math.round(parsed);
+                                    }
+                                }
+                            }
+                        } else {
+                            var clean = textVal.match(/([0-9\.]+)/);
+                            if (clean) {
+                                var p = parseFloat(clean[1]);
+                                if (!isNaN(p)) {
+                                    if (customUnit === 'GB' || textVal.toUpperCase().indexOf('GB') !== -1) foundBytes = Math.round(p * 1024 * 1024 * 1024);
+                                    else if (customUnit === 'MB' || textVal.toUpperCase().indexOf('MB') !== -1) foundBytes = Math.round(p * 1024 * 1024);
+                                    else foundBytes = Math.round(p);
+                                }
+                            }
+                        }
+                    }
+                } catch(e) {}
+            }
+
+            // ب) الكشط التلقائي الافتراضي في حال عدم وجود محدد مخصص
+            if (!foundBytes) {
+                var huaweiUsage = bodyText.match(/محلي الاستخدام\s*([0-9\.]+)\s*(GB|MB)/i) || bodyText.match(/([0-9\.]+)\s*GB/i);
+                if (huaweiUsage) {
+                    var numH = parseFloat(huaweiUsage[1]);
+                    var unitH = huaweiUsage[2].toUpperCase();
+                    if (unitH.indexOf('GB') !== -1) {
+                        foundBytes = Math.round(numH * 1024 * 1024 * 1024);
+                    } else {
+                        foundBytes = Math.round(numH * 1024 * 1024);
+                    }
                 }
             }
 
@@ -243,9 +286,10 @@ class WebUIFallbackService(private val context: Context) {
             var macRegex = /([0-9A-Fa-f]{2}[:-]){5}([0-9A-Fa-f]{2})/;
             var ipRegex = /\b(?:(?:25[0-5]|2[0-4][0-9]|[01]?[0-9][0-9]?)\.){3}(?:25[0-5]|2[0-4][0-9]|[01]?[0-9][0-9]?)\b/;
 
-            var containers = document.querySelectorAll('tr, .device-item, .host-item, li, div.devicelist, div');
+            var containerSelector = "$customDeviceSelector".length > 0 ? "$customDeviceSelector" : 'tr, .device-item, .host-item, li, div.devicelist, div';
+            var containers = document.querySelectorAll(containerSelector);
             containers.forEach(function(el) {
-                if (el.children.length > 15) return;
+                if (el.children.length > 15 && "$customDeviceSelector".length === 0) return;
                 var rowText = el.innerText || '';
                 var macMatch = rowText.match(macRegex);
                 if (macMatch) {
@@ -271,7 +315,7 @@ class WebUIFallbackService(private val context: Context) {
 
             // 5. الأزرار
             var buttons = [];
-            var btnElements = document.querySelectorAll('button, input[type="button"], input[type="submit"], [role="button"], a.btn');
+            var btnElements = document.querySelectorAll('button, input[type="button"], input[type="submit"], [role="button"], a.btn, div.access_switch');
             btnElements.forEach(function(el, index) {
                 var txt = (el.innerText || el.textContent || el.value || '').trim();
                 var id = el.id || ('btn_' + index);
@@ -280,16 +324,16 @@ class WebUIFallbackService(private val context: Context) {
                 var selector = el.id ? ('#' + CSS.escape(el.id)) : (name ? (el.tagName.toLowerCase() + '[name="' + CSS.escape(name) + '"]') : '');
 
                 var fullSearch = (txt + ' ' + id + ' ' + name + ' ' + val).toLowerCase();
-                var isReboot = fullSearch.indexOf('reboot') !== -1 || fullSearch.indexOf('restart') !== -1 || fullSearch.indexOf('إعادة') !== -1;
+                var isReboot = fullSearch.indexOf('reboot') !== -1 || fullSearch.indexOf('restart') !== -1 || fullSearch.indexOf('إعادة') !== -1 || ("$customRebootSelector".length > 0 && selector === "$customRebootSelector");
                 var isLogin = fullSearch.indexOf('login') !== -1 || fullSearch.indexOf('signin') !== -1 || fullSearch.indexOf('دخول') !== -1;
                 var isApply = fullSearch.indexOf('apply') !== -1 || fullSearch.indexOf('save') !== -1 || fullSearch.indexOf('حفظ') !== -1 || fullSearch.indexOf('تطبيق') !== -1;
 
-                if (txt || id || name || val) {
+                if (txt || id || name || val || el.classList.contains('access_switch')) {
                     buttons.push({
                         id: id,
                         selector: selector,
                         tag: el.tagName.toLowerCase(),
-                        text: txt.substring(0, 50),
+                        text: (txt || (el.classList.contains('access_switch') ? 'مفتاح حظر/اتصال: ' + el.getAttribute('mac') : '')).substring(0, 50),
                         value: val.substring(0, 50),
                         isReboot: isReboot,
                         isLogin: isLogin,
@@ -324,59 +368,98 @@ class WebUIFallbackService(private val context: Context) {
         customWv: WebView? = null
     ): Pair<Boolean, String> = withContext(Dispatchers.Main) {
         val wv = customWv ?: getOrCreateWebView()
-        val selArg = (selector ?: "").replace("\"", "\\\"")
-        val txtArg = (text ?: "").replace("\"", "\\\"")
-        val actionStr = semanticAction?.name?.lowercase().orEmpty()
+        val escapedSel = selector?.replace("\\", "\\\\")?.replace("\"", "\\\"") ?: ""
+        val escapedText = text?.replace("\\", "\\\\")?.replace("\"", "\\\"") ?: ""
+        val actionType = semanticAction?.name ?: ""
 
         val js = """
         (function() {
             window.confirm = function() { return true; };
             window.alert = function() { return true; };
 
-            var targetSelector = "$selArg";
-            var targetText = "$txtArg".toLowerCase().trim();
-            var action = "$actionStr";
+            var target = null;
+            var selector = "$escapedSel";
+            var targetText = "$escapedText";
+            var action = "$actionType";
 
-            var btn = null;
-            if (targetSelector.length > 0) {
-                try { btn = document.querySelector(targetSelector); } catch(e){}
+            // 1. الضغط عبر Selector المباشر
+            if (selector.length > 0) {
+                target = document.querySelector(selector);
             }
 
-            if (!btn && action.length > 0) {
-                if (action.indexOf('reboot') !== -1) {
-                    btn = document.querySelector('#reboot_apply_button, #menu_reboot, #btn_reboot, #reboot, input[value*="Reboot" i]');
-                }
-                if (!btn) {
-                    var all = document.querySelectorAll('button, input[type="button"], input[type="submit"], [role="button"], a');
-                    for (var i = 0; i < all.length; i++) {
-                        var t = (all[i].innerText || all[i].textContent || all[i].value || all[i].id || '').toLowerCase();
-                        if (action.indexOf('reboot') !== -1 && (t.indexOf('reboot') !== -1 || t.indexOf('restart') !== -1 || t.indexOf('إعادة') !== -1)) {
-                            btn = all[i]; break;
+            // 2. الضغط الدلالي (Semantic Action)
+            if (!target && action.length > 0) {
+                if (action === "REBOOT") {
+                    var rebootCandidates = [
+                        '#reboot_apply_button',
+                        '#btn_reboot',
+                        '#reboot',
+                        '#restart',
+                        'input[name="reboot"]',
+                        'button[name="reboot"]',
+                        'input[value*="Reboot" i]',
+                        'input[value*="إعادة" i]',
+                        'button:contains("إعادة التشغيل")'
+                    ];
+                    for (var r = 0; r < rebootCandidates.length; r++) {
+                        var el = document.querySelector(rebootCandidates[r]);
+                        if (el) { target = el; break; }
+                    }
+                    if (!target) {
+                        var allBtns = document.querySelectorAll('button, input[type="button"], input[type="submit"], a');
+                        for (var i = 0; i < allBtns.length; i++) {
+                            var b = allBtns[i];
+                            var t = (b.innerText || b.value || '').trim();
+                            if (t.indexOf('إعادة التشغيل') !== -1 || t.toLowerCase().indexOf('reboot') !== -1) {
+                                target = b; break;
+                            }
                         }
+                    }
+                } else if (action === "LOGIN") {
+                    target = document.querySelector('#f_submit_login, #login, #submit, input[type="submit"]');
+                } else if (action === "APPLY") {
+                    target = document.querySelector('#apply, #save, #btnApply, input[value*="Apply" i], input[value*="Save" i], input[value*="تطبيق" i]');
+                }
+            }
+
+            // 3. الضغط عبر النص المباشر
+            if (!target && targetText.length > 0) {
+                var all = document.querySelectorAll('button, input[type="button"], input[type="submit"], [role="button"], a');
+                for (var j = 0; j < all.length; j++) {
+                    var item = all[j];
+                    var itText = (item.innerText || item.value || '').trim();
+                    if (itText === targetText || itText.indexOf(targetText) !== -1) {
+                        target = item; break;
                     }
                 }
             }
 
-            if (btn) {
-                btn.scrollIntoView();
-                btn.dispatchEvent(new MouseEvent('mouseenter', { bubbles: true }));
-                btn.dispatchEvent(new MouseEvent('mousedown', { bubbles: true }));
-                btn.dispatchEvent(new MouseEvent('mouseup', { bubbles: true }));
-                btn.click();
-                var label = (btn.innerText || btn.value || btn.id || 'زر').trim();
-                return JSON.stringify({ success: true, message: 'تم الضغط بنجاح على: ' + label });
+            if (!target) {
+                return JSON.stringify({ success: false, message: 'لم يتم العثور على الزر المطلوب في الصفحة' });
             }
 
-            return JSON.stringify({ success: false, message: 'لم يتم العثور على زر مطابق' });
+            target.scrollIntoView();
+            target.focus();
+            target.click();
+
+            var form = target.closest ? target.closest('form') : null;
+            if (form && target.getAttribute('type') === 'submit') {
+                try { form.submit(); } catch(e) {}
+            }
+
+            return JSON.stringify({
+                success: true,
+                message: 'تم النقر على الزر بنجاح: ' + (target.innerText || target.value || target.id || 'زر مجهول')
+            });
         })();
         """.trimIndent()
 
-        val res = evaluateJsAsync(wv, js)
+        val resJson = evaluateJsAsync(wv, js)
         try {
-            val obj = JSONObject(res)
-            Pair(obj.optBoolean("success", false), obj.optString("message", "تم الإرسال"))
+            val obj = JSONObject(resJson)
+            Pair(obj.optBoolean("success", false), obj.optString("message", "تم النقر"))
         } catch (e: Exception) {
-            Pair(false, "خطأ في استجابة المتصفح: ${e.message}")
+            Pair(false, "خطأ في الضغط على الزر: ${e.message}")
         }
     }
 

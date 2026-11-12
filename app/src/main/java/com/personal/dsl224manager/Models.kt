@@ -34,7 +34,14 @@ data class RouterProfile(
     var accumulatedBytes: Long = 0,
     var devices: List<NetworkDevice> = emptyList(),
     var enableWebUIFallback: Boolean = true,
-    var webUIPath: String = ""
+    var webUIPath: String = "",
+
+    // تخصيص الكشط المرئي بدون كود (No-Code Scraper Customization)
+    var customUsageSelector: String = "",
+    var customUsageRegex: String = "",
+    var customUsageUnit: String = "Auto", // Auto, GB, MB, Bytes
+    var customDeviceTableSelector: String = "",
+    var customRebootButtonSelector: String = ""
 ) {
     val usedGB: Double get() = accumulatedBytes.toDouble() / (1024.0 * 1024.0 * 1024.0)
     val remainingGB: Double get() = (totalPlanGB - usedGB).coerceAtLeast(0.0)
