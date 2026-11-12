@@ -32,9 +32,50 @@ data class RouterProfile(
     var liveDownloadRateKbps: Double = 0.0,
     var liveUploadRateKbps: Double = 0.0,
     var accumulatedBytes: Long = 0,
-    var devices: List<NetworkDevice> = emptyList()
+    var devices: List<NetworkDevice> = emptyList(),
+    var enableWebUIFallback: Boolean = true,
+    var webUIPath: String = ""
 ) {
     val usedGB: Double get() = accumulatedBytes.toDouble() / (1024.0 * 1024.0 * 1024.0)
     val remainingGB: Double get() = (totalPlanGB - usedGB).coerceAtLeast(0.0)
     val usedPercentage: Double get() = if (totalPlanGB > 0) ((usedGB / totalPlanGB) * 100).coerceIn(0.0, 100.0) else 0.0
 }
+
+enum class SemanticButtonAction(val label: String) {
+    REBOOT("إعادة التشغيل (Reboot)"),
+    LOGIN("تسجيل الدخول (Login)"),
+    APPLY("حفظ وتطبيق (Apply)"),
+    REFRESH("تحديث (Refresh)")
+}
+
+data class WebUIButtonInfo(
+    val id: String,
+    val selector: String,
+    val tag: String,
+    val text: String,
+    val value: String,
+    val isReboot: Boolean = false,
+    val isLogin: Boolean = false,
+    val isApply: Boolean = false
+) {
+    val displayLabel: String get() = text.trim().ifEmpty { value.trim().ifEmpty { id.ifEmpty { selector } } }
+}
+
+data class WebUIScrapedDevice(
+    val macAddress: String,
+    val ipAddress: String,
+    val hostName: String
+)
+
+data class WebUIScrapeResult(
+    val success: Boolean,
+    val wanBytes: Long? = null,
+    val liveDownloadKbps: Double? = null,
+    val liveUploadKbps: Double? = null,
+    val carrierName: String? = null,
+    val devices: List<WebUIScrapedDevice> = emptyList(),
+    val buttons: List<WebUIButtonInfo> = emptyList(),
+    val pageTitle: String = "",
+    val currentURL: String = "",
+    val message: String = ""
+)

@@ -11,6 +11,8 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Block
 import androidx.compose.material.icons.filled.CheckCircle
+import androidx.compose.material.icons.filled.Language
+import androidx.compose.material.icons.filled.PowerSettingsNew
 import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material.icons.filled.Router
 import androidx.compose.material3.*
@@ -18,6 +20,7 @@ import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
@@ -45,6 +48,8 @@ class MainActivity : ComponentActivity() {
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun MainScreen(repo: RouterRepository) {
+    val context = LocalContext.current
+    val webUI = remember { WebUIFallbackService(context) }
     var profile by remember { mutableStateOf(RouterProfile()) }
     var logs by remember { mutableStateOf(listOf("مرحباً بك في مدير الراوتر")) }
     var isLoading by remember { mutableStateOf(false) }
@@ -59,12 +64,56 @@ fun MainScreen(repo: RouterRepository) {
             TopAppBar(
                 title = { Text(profile.name, fontWeight = FontWeight.Bold) },
                 actions = {
+                    // زر كشط WebUI البديل
+                    IconButton(
+                        onClick = {
+                            scope.launch {
+                                isLoading = true
+                                log("جاري الكشط عبر متصفح WebUI البديل...")
+                                val res = webUI.autoLoginAndScrape(profile)
+                                if (res.success) {
+                                    profile = repo.applyScrapeResult(profile, res) { log(it) }
+                                    log("✅ نجح كشط بيانات الراوتر من الويب")
+                                } else {
+                                    log("❌ فشل كشط WebUI: ${res.message}")
+                                }
+                                isLoading = false
+                            }
+                        },
+                        enabled = !isLoading
+                    ) {
+                        Icon(Icons.Default.Language, contentDescription = "كشط WebUI", tint = Color(0xFFFF9500))
+                    }
+
+                    // زر إعادة تشغيل الراوتر (Reboot)
+                    IconButton(
+                        onClick = {
+                            scope.launch {
+                                log("جاري إرسال أمر إعادة التشغيل عبر المتصفح...")
+                                val (ok, msg) = webUI.pressButton(semanticAction = SemanticButtonAction.REBOOT)
+                                log(if (ok) "✅ $msg" else "❌ $msg")
+                            }
+                        },
+                        enabled = !isLoading
+                    ) {
+                        Icon(Icons.Default.PowerSettingsNew, contentDescription = "إعادة تشغيل", tint = Color.Red)
+                    }
+
+                    // زر التحديث العادي (مع Fallback تلقائي)
                     IconButton(
                         onClick = {
                             scope.launch {
                                 isLoading = true
                                 log("جاري تحديث بيانات الراوتر...")
-                                profile = repo.refreshHuawei(profile) { log(it) }
+                                var updated = repo.refreshHuawei(profile) { log(it) }
+                                if (updated.accumulatedBytes == 0L && updated.enableWebUIFallback) {
+                                    log("محاولة الكشط عبر المتصفح البديل (WebUI Fallback)...")
+                                    val scrapeRes = webUI.autoLoginAndScrape(updated)
+                                    if (scrapeRes.success) {
+                                        updated = repo.applyScrapeResult(updated, scrapeRes) { log(it) }
+                                    }
+                                }
+                                profile = updated
                                 isLoading = false
                             }
                         },
@@ -124,6 +173,45 @@ fun MainScreen(repo: RouterRepository) {
                         Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
                             Text("المتبقي: ${String.format("%.2f", profile.remainingGB)} GB", color = Color.Gray)
                             Text("الاستهلاك: ${String.format("%.1f", profile.usedPercentage)}%", color = MaterialTheme.colorScheme.primary)
+                        }
+
+                        // أزرار الكشط السريع
+                        Spacer(Modifier.height(12.dp))
+                        Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                            Button(
+                                onClick = {
+                                    scope.launch {
+                                        isLoading = true
+                                        log("بدء كشط واجهة الويب الآن...")
+                                        val res = webUI.autoLoginAndScrape(profile)
+                                        if (res.success) {
+                                            profile = repo.applyScrapeResult(profile, res) { log(it) }
+                                            log("✅ تم تحديث العداد والأجهزة من صفحة الراوتر")
+                                        } else {
+                                            log("❌ تعذر الكشط: ${res.message}")
+                                        }
+                                        isLoading = false
+                                    }
+                                },
+                                modifier = Modifier.weight(1f),
+                                colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF2A2A2A))
+                            ) {
+                                Text("كشط WebUI", fontSize = 12.sp)
+                            }
+
+                            Button(
+                                onClick = {
+                                    scope.launch {
+                                        log("جاري الضغط على زر إعادة التشغيل في صفحة الراوتر...")
+                                        val (ok, msg) = webUI.pressButton(semanticAction = SemanticButtonAction.REBOOT)
+                                        log(if (ok) "✅ $msg" else "❌ $msg")
+                                    }
+                                },
+                                modifier = Modifier.weight(1f),
+                                colors = ButtonDefaults.buttonColors(containerColor = Color(0x33FF3B30))
+                            ) {
+                                Text("إعادة تشغيل", fontSize = 12.sp, color = Color.Red)
+                            }
                         }
                     }
                 }

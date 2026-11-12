@@ -39,6 +39,43 @@ class RouterRepository {
         updated
     }
 
+    fun applyScrapeResult(profile: RouterProfile, result: WebUIScrapeResult, onLog: (String) -> Unit): RouterProfile {
+        val updated = profile.copy()
+        if (result.wanBytes != null && result.wanBytes > 0) {
+            updated.accumulatedBytes = result.wanBytes
+            onLog("تم كشط الاستهلاك بنجاح: ${String.format("%.2f", updated.usedGB)} GB")
+        }
+        if (!result.carrierName.isNullOrBlank()) {
+            updated.carrierName = result.carrierName
+        }
+        if (result.liveDownloadKbps != null) {
+            updated.liveDownloadRateKbps = result.liveDownloadKbps
+        }
+        if (result.liveUploadKbps != null) {
+            updated.liveUploadRateKbps = result.liveUploadRateKbps
+        }
+        if (result.devices.isNotEmpty()) {
+            val currentMap = updated.devices.associateBy { it.id }.toMutableMap()
+            result.devices.forEach { dev ->
+                val cleanMac = dev.macAddress.replace("-", ":").uppercase()
+                val existing = currentMap[cleanMac]
+                if (existing != null) {
+                    currentMap[cleanMac] = existing.copy(ipAddress = dev.ipAddress)
+                } else {
+                    currentMap[cleanMac] = NetworkDevice(
+                        ipAddress = dev.ipAddress,
+                        macAddress = cleanMac,
+                        originalHostname = dev.hostName,
+                        isOnline = true
+                    )
+                }
+            }
+            updated.devices = currentMap.values.toList()
+            onLog("تم استخراج ${result.devices.size} جهاز عبر كشط صفحة الراوتر")
+        }
+        return updated
+    }
+
     private fun fetchPublicStats(profile: RouterProfile, onLog: (String) -> Unit) {
         try {
             // مزود الشبكة
