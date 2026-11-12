@@ -70,8 +70,8 @@ data class WebUIScrapedDevice(
 data class WebUIScrapeResult(
     val success: Boolean,
     val wanBytes: Long? = null,
-    val liveDownloadKbps: Double? = null,
-    val liveUploadKbps: Double? = null,
+    val liveDownloadRateKbps: Double? = null,
+    val liveUploadRateKbps: Double? = null,
     val carrierName: String? = null,
     val devices: List<WebUIScrapedDevice> = emptyList(),
     val buttons: List<WebUIButtonInfo> = emptyList(),

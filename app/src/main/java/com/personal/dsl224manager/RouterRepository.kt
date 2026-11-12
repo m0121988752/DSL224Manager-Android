@@ -48,10 +48,10 @@ class RouterRepository {
         if (!result.carrierName.isNullOrBlank()) {
             updated.carrierName = result.carrierName
         }
-        if (result.liveDownloadKbps != null) {
-            updated.liveDownloadRateKbps = result.liveDownloadKbps
+        if (result.liveDownloadRateKbps != null) {
+            updated.liveDownloadRateKbps = result.liveDownloadRateKbps
         }
-        if (result.liveUploadKbps != null) {
+        if (result.liveUploadRateKbps != null) {
             updated.liveUploadRateKbps = result.liveUploadRateKbps
         }
         if (result.devices.isNotEmpty()) {

@@ -437,8 +437,8 @@ class WebUIFallbackService(private val context: Context) {
             WebUIScrapeResult(
                 success = obj.optBoolean("success", true),
                 wanBytes = wanBytes,
-                liveDownloadKbps = downRate,
-                liveUploadKbps = upRate,
+                liveDownloadRateKbps = downRate,
+                liveUploadRateKbps = upRate,
                 carrierName = carrier,
                 devices = devicesList,
                 buttons = buttonsList,
