@@ -1546,7 +1546,7 @@ fun RouterWebUIDialog(
                                 scope.launch {
                                     toastMessage = "جارِ الضغط على زر إعادة التشغيل..."
                                     val (ok, msg) = webUI.pressButton(
-                                        router = router,
+                                        profile = router,
                                         selector = router.customRebootButtonSelector.takeIf { it.isNotBlank() },
                                         semanticAction = SemanticButtonAction.REBOOT,
                                         customWv = webViewRef

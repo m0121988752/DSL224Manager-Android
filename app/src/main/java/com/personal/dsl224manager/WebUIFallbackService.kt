@@ -369,13 +369,16 @@ class WebUIFallbackService(private val context: Context) {
     }
 
     suspend fun pressButton(
+        profile: RouterProfile? = null,
         selector: String? = null,
         text: String? = null,
         semanticAction: SemanticButtonAction? = null,
         customWv: WebView? = null
     ): Pair<Boolean, String> = withContext(Dispatchers.Main) {
         val wv = customWv ?: getOrCreateWebView()
-        val escapedSel = selector?.replace("\\", "\\\\")?.replace("\"", "\\\"") ?: ""
+        val customReboot = (profile?.customRebootButtonSelector ?: "").replace("\\", "\\\\").replace("\"", "\\\"")
+        val escapedSel = (selector ?: (if (semanticAction == SemanticButtonAction.REBOOT && profile?.customRebootButtonSelector?.isNotBlank() == true) profile.customRebootButtonSelector else null))
+            ?.replace("\\", "\\\\")?.replace("\"", "\\\"") ?: ""
         val escapedText = text?.replace("\\", "\\\\")?.replace("\"", "\\\"") ?: ""
         val actionType = semanticAction?.name ?: ""
 
@@ -408,6 +411,9 @@ class WebUIFallbackService(private val context: Context) {
                         'input[value*="إعادة" i]',
                         'button:contains("إعادة التشغيل")'
                     ];
+                    if ("$customReboot".length > 0) {
+                        rebootCandidates.unshift("$customReboot");
+                    }
                     for (var r = 0; r < rebootCandidates.length; r++) {
                         var el = document.querySelector(rebootCandidates[r]);
                         if (el) { target = el; break; }
