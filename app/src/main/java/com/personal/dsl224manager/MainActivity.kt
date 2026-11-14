@@ -449,6 +449,7 @@ fun NoCodeScraperDialog(
     var passwordSelector by remember { mutableStateOf(router.customPasswordSelector) }
     var loginBtnSelector by remember { mutableStateOf(router.customLoginButtonSelector) }
     var webPath by remember { mutableStateOf(router.webUIPath) }
+    var showPresetsDialog by remember { mutableStateOf(false) }
 
     // قوالب سريعة جاهزة بدون كود (Quick Presets)
     val presets = listOf(
@@ -497,7 +498,18 @@ fun NoCodeScraperDialog(
 
                 // قوالب جاهزة بلمسة واحدة
                 item {
-                    Text("قوالب سريعة جاهزة:", fontWeight = FontWeight.Bold, fontSize = 12.sp)
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Text("قوالب سريعة جاهزة:", fontWeight = FontWeight.Bold, fontSize = 12.sp)
+                        TextButton(onClick = { showPresetsDialog = true }) {
+                            Icon(Icons.Default.Layers, contentDescription = null, tint = Color(0xFFFF9F0A), modifier = Modifier.size(14.dp))
+                            Spacer(Modifier.width(4.dp))
+                            Text("المكتبة الشاملة (${RouterPresetsManager.builtinPresets.size})", fontSize = 11.sp, color = Color(0xFFFF9F0A), fontWeight = FontWeight.Bold)
+                        }
+                    }
                     Row(
                         modifier = Modifier.fillMaxWidth(),
                         horizontalArrangement = Arrangement.spacedBy(6.dp)
@@ -671,6 +683,37 @@ fun NoCodeScraperDialog(
             }
         }
     )
+
+    if (showPresetsDialog) {
+        PresetsLibraryDialog(
+            currentProfile = router,
+            onDismiss = { showPresetsDialog = false },
+            onApplyProfile = { updated ->
+                usageSelector = updated.customUsageSelector
+                usageRegex = updated.customUsageRegex
+                usageUnit = updated.customUsageUnit
+                deviceTableSelector = updated.customDeviceTableSelector
+                rebootBtnSelector = updated.customRebootButtonSelector
+                usernameSelector = updated.customUsernameSelector
+                passwordSelector = updated.customPasswordSelector
+                loginBtnSelector = updated.customLoginButtonSelector
+                webPath = updated.webUIPath
+                showPresetsDialog = false
+            },
+            onSelectPreset = { preset ->
+                usageSelector = preset.customUsageSelector
+                usageRegex = preset.customUsageRegex
+                usageUnit = preset.customUsageUnit
+                deviceTableSelector = preset.customDeviceTableSelector
+                rebootBtnSelector = preset.customRebootButtonSelector
+                usernameSelector = preset.customUsernameSelector
+                passwordSelector = preset.customPasswordSelector
+                loginBtnSelector = preset.customLoginButtonSelector
+                webPath = preset.webUIPath
+                showPresetsDialog = false
+            }
+        )
+    }
 }
 
 // ==================== تبويب الشبكة والأجهزة (Dashboard) ====================
@@ -1150,6 +1193,7 @@ fun SettingsTab(
     var firmware by remember(router) { mutableStateOf(router.firmware) }
     var totalPlanGB by remember(router) { mutableStateOf(router.totalPlanGB.toInt().toString()) }
     var enableFallback by remember(router) { mutableStateOf(router.enableWebUIFallback) }
+    var showPresetsDialog by remember { mutableStateOf(false) }
 
     LazyColumn(
         modifier = Modifier
@@ -1372,6 +1416,45 @@ fun SettingsTab(
                 }
             }
         }
+
+        // بطاقة مكتبة قوالب الراوترات الجاهزة والمشاركة
+        item {
+            Card(
+                modifier = Modifier.fillMaxWidth(),
+                shape = RoundedCornerShape(16.dp),
+                colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface)
+            ) {
+                Column(modifier = Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        Icon(Icons.Default.Layers, contentDescription = null, tint = Color(0xFFFF9F0A))
+                        Spacer(Modifier.width(8.dp))
+                        Text("مكتبة قوالب الراوترات والمشاركة (Presets)", fontWeight = FontWeight.Bold, fontSize = 14.sp)
+                    }
+                    Text("اختر قالباً جاهزاً من 6 راوترات معتمدة (ZTE, Huawei, D-Link, TP-Link, Vodafone, Orange) أو شارك قالب راوترك بنقرة واحدة.", fontSize = 12.sp, color = Color.Gray)
+
+                    Button(
+                        onClick = { showPresetsDialog = true },
+                        modifier = Modifier.fillMaxWidth(),
+                        colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF382A15))
+                    ) {
+                        Icon(Icons.Default.AutoAwesome, contentDescription = null, tint = Color(0xFFFF9F0A))
+                        Spacer(Modifier.width(8.dp))
+                        Text("تصفح مكتبة القوالب وتصدير / استيراد 📋", color = Color.White, fontWeight = FontWeight.Bold)
+                    }
+                }
+            }
+        }
+    }
+
+    if (showPresetsDialog) {
+        PresetsLibraryDialog(
+            currentProfile = router,
+            onDismiss = { showPresetsDialog = false },
+            onApplyProfile = { updated ->
+                onSave(updated)
+                showPresetsDialog = false
+            }
+        )
     }
 }
 
@@ -1425,6 +1508,7 @@ fun RouterWebUIDialog(
     var pickedElement by remember { mutableStateOf<PickedElementInfo?>(null) }
     var showAssignmentDialog by remember { mutableStateOf(false) }
     var showButtonsListDialog by remember { mutableStateOf(false) }
+    var showPresetsDialog by remember { mutableStateOf(false) }
     var discoveredButtons by remember { mutableStateOf<List<WebUIButtonInfo>>(emptyList()) }
 
     fun injectPickerScript(wv: WebView?) {
@@ -1628,6 +1712,13 @@ fun RouterWebUIDialog(
                             icon = { Icon(Icons.Default.PowerSettingsNew, contentDescription = null, modifier = Modifier.size(14.dp), tint = Color(0xFFFF453A)) }
                         )
 
+                        // زر قوالب الراوترات الجاهزة
+                        SuggestionChip(
+                            onClick = { showPresetsDialog = true },
+                            label = { Text("قوالب 📋", fontSize = 11.sp) },
+                            icon = { Icon(Icons.Default.Layers, contentDescription = null, modifier = Modifier.size(14.dp), tint = Color(0xFFFF9F0A)) }
+                        )
+
                         // زر الأزرار المكتشفة
                         if (discoveredButtons.isNotEmpty()) {
                             SuggestionChip(
@@ -1782,6 +1873,19 @@ fun RouterWebUIDialog(
         )
     }
 
+    // Presets Library Dialog
+    if (showPresetsDialog) {
+        PresetsLibraryDialog(
+            currentProfile = router,
+            onDismiss = { showPresetsDialog = false },
+            onApplyProfile = { updated ->
+                onRouterUpdated(updated)
+                toastMessage = "تم تطبيق قالب [${updated.name}] بنجاح! ✅"
+                showPresetsDialog = false
+            }
+        )
+    }
+
     // Assignment Dialog
     if (showAssignmentDialog && pickedElement != null) {
         val info = pickedElement!!
@@ -1798,6 +1902,29 @@ fun RouterWebUIDialog(
                 showAssignmentDialog = false
                 pickedElement = null
                 toastMessage = "وضع الالتقاط مفعّل: المس عنصراً آخر في الصفحة"
+            },
+            onTestClick = {
+                val selEscaped = info.selector.replace("\\", "\\\\").replace("'", "\\'")
+                val js = """
+                    (function() {
+                        try {
+                            var el = document.querySelector('$selEscaped');
+                            if (el) {
+                                el.scrollIntoView({ behavior: 'smooth', block: 'center' });
+                                el.style.outline = '3px solid red';
+                                setTimeout(function() { el.style.outline = ''; }, 1500);
+                                el.click();
+                                return 'CLICKED_OK';
+                            }
+                            return 'NOT_FOUND';
+                        } catch(e) {
+                            return 'ERR: ' + e.message;
+                        }
+                    })();
+                """.trimIndent()
+                webViewRef?.evaluateJavascript(js) { res ->
+                    toastMessage = if (res?.contains("CLICKED_OK") == true) "تم محاكاة النقر على العنصر في المتصفح بنجاح! ⚡" else "فشل النقر أو لم يعثر على العنصر"
+                }
             },
             onAssign = { action ->
                 showAssignmentDialog = false
@@ -1857,12 +1984,47 @@ fun RouterWebUIDialog(
     }
 }
 
+fun computeLivePreview(info: PickedElementInfo): String {
+    val raw = "${info.text} ${info.value}".trim()
+    val full = "$raw ${info.selector}".lowercase()
+
+    // 1. فحص عداد الباقة
+    val numMatch = Regex("""([0-9\.]+)\s*(GB|MB|KB|Bytes)""", RegexOption.IGNORE_CASE).find(raw)
+    if (numMatch != null) {
+        return "⚡ قراءة الاستهلاك المكتشفة: ${numMatch.value}"
+    }
+    val bytesMatch = Regex("""\b(\d{7,16})\b""").find(raw)
+    if (bytesMatch != null) {
+        val b = bytesMatch.value.toLongOrNull() ?: 0L
+        val gb = b.toDouble() / (1024.0 * 1024.0 * 1024.0)
+        return "⚡ عداد البايتات: ${bytesMatch.value} (${String.format(java.util.Locale.US, "%.2f", gb)} GB)"
+    }
+
+    // 2. فحص جدول الأجهزة
+    if (info.tag.equals("table", ignoreCase = true) || info.tag.equals("tbody", ignoreCase = true) || full.contains("device") || full.contains("dhcp") || full.contains("host") || full.contains("mac")) {
+        return "⚡ جدول أجهزة: سيتم استخراج عناوين MAC و IP وحالة الاتصال"
+    }
+
+    // 3. أزرار أو حقول
+    if (info.tag.equals("button", ignoreCase = true) || (info.tag.equals("input", ignoreCase = true) && (info.value.isNotBlank() || full.contains("submit") || full.contains("button")))) {
+        val label = raw.ifBlank { info.selector }
+        return "⚡ زر تفاعلي: \"$label\" (جاهز لتنفيذ الأوامر)"
+    }
+
+    if (info.tag.equals("input", ignoreCase = true)) {
+        return "⚡ حقل إدخال بيانات (جاهز للتعبئة التلقائية)"
+    }
+
+    return if (raw.isNotBlank()) "⚡ المعاينة: \"${raw.take(60)}\"" else "⚡ تم التقاط المحدد بنجاح"
+}
+
 @Composable
 fun ElementAssignmentDialog(
     info: PickedElementInfo,
     onDismiss: () -> Unit,
     onContinuePicking: () -> Unit,
-    onAssign: (ElementAssignmentAction) -> Unit
+    onAssign: (ElementAssignmentAction) -> Unit,
+    onTestClick: (() -> Unit)? = null
 ) {
     AlertDialog(
         onDismissRequest = onDismiss,
@@ -1930,6 +2092,37 @@ fun ElementAssignmentDialog(
                                 maxLines = 2,
                                 overflow = TextOverflow.Ellipsis
                             )
+
+                            // شارة المعاينة الفورية الذكية (Live Instant Preview)
+                            val livePreview = computeLivePreview(info)
+                            Row(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .background(Color(0xFF30D158).copy(alpha = 0.15f), RoundedCornerShape(6.dp))
+                                    .padding(horizontal = 8.dp, vertical = 5.dp),
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                Icon(Icons.Default.Bolt, contentDescription = null, tint = Color(0xFF30D158), modifier = Modifier.size(14.dp))
+                                Spacer(Modifier.width(4.dp))
+                                Text(livePreview, fontSize = 11.sp, color = Color(0xFF30D158), fontWeight = FontWeight.Bold)
+                            }
+                        }
+                    }
+                }
+
+                // زر اختبار النقر المباشر (Instant Test Click)
+                if (onTestClick != null) {
+                    item {
+                        Button(
+                            onClick = onTestClick,
+                            colors = ButtonDefaults.buttonColors(containerColor = Color(0xFFFF9F0A)),
+                            modifier = Modifier.fillMaxWidth(),
+                            contentPadding = PaddingValues(horizontal = 10.dp, vertical = 6.dp),
+                            shape = RoundedCornerShape(8.dp)
+                        ) {
+                            Icon(Icons.Default.TouchApp, contentDescription = null, tint = Color.Black, modifier = Modifier.size(16.dp))
+                            Spacer(Modifier.width(6.dp))
+                            Text("⚡ اختبار النقر المباشر (Test Click)", fontSize = 12.sp, color = Color.Black, fontWeight = FontWeight.Bold)
                         }
                     }
                 }
