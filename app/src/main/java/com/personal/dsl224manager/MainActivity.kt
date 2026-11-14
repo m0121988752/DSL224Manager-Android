@@ -76,7 +76,7 @@ fun MainScreen(repo: RouterRepository) {
     val initialData = remember { storage.loadRouters() }
     var routers by remember { mutableStateOf(initialData.first) }
     var activeRouterIndex by remember { mutableStateOf(initialData.second) }
-    val activeRouter = routers.getOrElse(activeRouterIndex) { routers.first() }
+    val activeRouter = routers.getOrElse(activeRouterIndex) { routers.firstOrNull() ?: RouterProfile() }
 
     var selectedTab by remember { mutableStateOf(MainTab.DASHBOARD) }
     var logs by remember { mutableStateOf(listOf("مرحباً بك في DSL224Manager", "تم استرجاع الإعدادات المحفوظة بنجاح")) }
@@ -240,21 +240,27 @@ fun MainScreen(repo: RouterRepository) {
                     isLoading = isLoading,
                     onToggleBlock = { dev, block ->
                         scope.launch {
+                            // 1. تحديث الحالة فورياً في الواجهة (Optimistic UI Update) لسرعة الاستجابة
+                            val updatedDevs = activeRouter.devices.map {
+                                if (it.macAddress.equals(dev.macAddress, ignoreCase = true)) it.copy(isBlocked = block) else it
+                            }
+                            updateActiveRouter(activeRouter.copy(devices = updatedDevs))
+
+                            // 2. إرسال أمر الحظر للراوتر
                             val ok = repo.toggleBlockDevice(activeRouter, dev, block) { log(it) }
-                            if (ok) {
-                                val updatedDevs = activeRouter.devices.map {
-                                    if (it.macAddress == dev.macAddress) it.copy(isBlocked = block) else it
+                            if (!ok) {
+                                // التراجع عن الحالة إذا فشل الأمر في الراوتر
+                                val revertedDevs = activeRouter.devices.map {
+                                    if (it.macAddress.equals(dev.macAddress, ignoreCase = true)) it.copy(isBlocked = !block) else it
                                 }
-                                updateActiveRouter(activeRouter.copy(devices = updatedDevs))
+                                updateActiveRouter(activeRouter.copy(devices = revertedDevs))
                             }
                         }
                     },
                     onRenameDevice = { dev ->
                         editingDevice = dev
                         newCustomName = dev.displayName
-                    },
-                    onRefresh = { refreshActiveRouter() },
-                    onOpenNoCode = { showNoCodeDialog = true }
+                    }
                 )
                 MainTab.ROUTERS -> RoutersTab(
                     routers = routers,
@@ -662,9 +668,7 @@ fun DashboardTab(
     router: RouterProfile,
     isLoading: Boolean,
     onToggleBlock: (NetworkDevice, Boolean) -> Unit,
-    onRenameDevice: (NetworkDevice) -> Unit,
-    onRefresh: () -> Unit,
-    onOpenNoCode: () -> Unit
+    onRenameDevice: (NetworkDevice) -> Unit
 ) {
     var searchQuery by remember { mutableStateOf("") }
     var filterMode by remember { mutableStateOf(0) } // 0: الكل, 1: متصل, 2: محظور
@@ -878,7 +882,10 @@ fun DashboardTab(
                 }
             }
         } else {
-            items(filteredDevices) { dev ->
+            items(
+                items = filteredDevices,
+                key = { it.macAddress }
+            ) { dev ->
                 Card(
                     modifier = Modifier.fillMaxWidth(),
                     shape = RoundedCornerShape(14.dp),
