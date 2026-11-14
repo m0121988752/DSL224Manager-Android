@@ -100,6 +100,11 @@ class WebUIFallbackService(private val context: Context) {
             var userSelectors = [
                 '#f_username',
                 'input[name="f_username"]',
+                'input[name="username"]',
+                'input[name="user"]',
+                'input[name="login_name"]',
+                '#username',
+                '#user',
                 'input[name*="user" i]',
                 'input[id*="user" i]',
                 'input[type="text"]'
@@ -109,6 +114,11 @@ class WebUIFallbackService(private val context: Context) {
             var passSelectors = [
                 '#f_password',
                 'input[name="f_password"]',
+                'input[name="password"]',
+                'input[name="pass"]',
+                'input[name="psw"]',
+                '#password',
+                '#pass',
                 'input[type="password"]',
                 'input[name*="pass" i]',
                 'input[id*="pass" i]'

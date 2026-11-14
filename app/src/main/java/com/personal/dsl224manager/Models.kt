@@ -22,11 +22,11 @@ data class NetworkDevice(
 
 data class RouterProfile(
     val id: String = UUID.randomUUID().toString(),
-    var name: String = "راوتر Huawei 4G",
+    var name: String = "راوتر D-Link (DSL-224)",
     var routerIP: String = "192.168.1.1",
     var username: String = "admin",
     var password: String = "",
-    var firmware: FirmwareType = FirmwareType.HUAWEI_B311,
+    var firmware: FirmwareType = FirmwareType.ME110_BOA,
     var totalPlanGB: Double = 140.0,
     var carrierName: String = "",
     var liveDownloadRateKbps: Double = 0.0,

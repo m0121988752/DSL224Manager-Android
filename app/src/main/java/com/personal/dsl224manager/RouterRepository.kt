@@ -23,6 +23,112 @@ class RouterRepository {
     private var currentSessionCookie: String? = null
     private var currentVerificationToken: String? = null
 
+    /**
+     * تحديث بيانات الراوتر بناءً على نوع النظام (Huawei HiLink أو D-Link DSL-224)
+     */
+    suspend fun refreshRouter(profile: RouterProfile, onLog: (String) -> Unit): RouterProfile = withContext(Dispatchers.IO) {
+        when (profile.firmware) {
+            FirmwareType.HUAWEI_B311 -> refreshHuawei(profile, onLog)
+            FirmwareType.ME110_BOA, FirmwareType.GENERIC_REALTEK -> refreshDLink(profile, onLog)
+        }
+    }
+
+    suspend fun refreshDLink(profile: RouterProfile, onLog: (String) -> Unit): RouterProfile = withContext(Dispatchers.IO) {
+        val updated = profile.copy()
+        onLog("الاتصال براوتر D-Link DSL-224 (${profile.routerIP})...")
+
+        // 1. تسجيل الدخول إذا توفرت كلمة المرور
+        var cookie = currentSessionCookie
+        if (profile.password.isNotBlank()) {
+            val loginEndpoints = if (profile.firmware == FirmwareType.GENERIC_REALTEK) {
+                listOf("http://${profile.routerIP}/boaform/admin/formLogin", "http://${profile.routerIP}/login.cgi")
+            } else {
+                listOf("http://${profile.routerIP}/login.cgi", "http://${profile.routerIP}/boaform/admin/formLogin")
+            }
+
+            for (ep in loginEndpoints) {
+                try {
+                    val formBody = "username=${profile.username}&password=${profile.password}"
+                        .toRequestBody("application/x-www-form-urlencoded".toMediaType())
+                    val loginReq = Request.Builder()
+                        .url(ep)
+                        .post(formBody)
+                        .build()
+
+                    val (success, setCookie) = client.newCall(loginReq).execute().use { res ->
+                        Pair(res.isSuccessful || res.code in 200..399, res.header("Set-Cookie"))
+                    }
+
+                    if (!setCookie.isNullOrBlank()) {
+                        cookie = setCookie.substringBefore(";").trim()
+                        currentSessionCookie = cookie
+                    }
+
+                    if (success) {
+                        onLog("✅ تم إرسال بيانات الدخول لراوتر D-Link ($ep)")
+                        break
+                    }
+                } catch (_: Exception) {}
+            }
+        }
+
+        // 2. قراءة عداد بايتات الاستهلاك التراكمية
+        val trafficPages = listOf("status_traffic.html", "tc.html", "status.html", "tc_traffic.html")
+        for (page in trafficPages) {
+            try {
+                val reqBuilder = Request.Builder().url("http://${profile.routerIP}/$page")
+                if (!cookie.isNullOrBlank()) {
+                    reqBuilder.addHeader("Cookie", cookie!!)
+                }
+                client.newCall(reqBuilder.build()).execute().use { res ->
+                    if (res.isSuccessful) {
+                        val body = res.body?.string().orEmpty()
+                        val bytes = extractWANBytesFromDLink(body)
+                        if (bytes != null && bytes > 0L) {
+                            updated.accumulatedBytes = bytes
+                            onLog("تمت قراءة استهلاك D-Link: ${String.format(java.util.Locale.US, "%.2f", updated.usedGB)} GB")
+                        }
+                    }
+                }
+                if (updated.accumulatedBytes > 0L) break
+            } catch (_: Exception) {}
+        }
+
+        // 3. قراءة قائمة الأجهزة المتصلة
+        val clientPages = listOf("dhcpclients.html", "status_dhcp.html", "lan.html", "wlan_clients.html")
+        for (page in clientPages) {
+            try {
+                val reqBuilder = Request.Builder().url("http://${profile.routerIP}/$page")
+                if (!cookie.isNullOrBlank()) {
+                    reqBuilder.addHeader("Cookie", cookie!!)
+                }
+                client.newCall(reqBuilder.build()).execute().use { res ->
+                    if (res.isSuccessful) {
+                        val body = res.body?.string().orEmpty()
+                        val foundDevs = parseDLinkClients(body)
+                        if (foundDevs.isNotEmpty()) {
+                            val currentMap = updated.devices.associateBy { it.id }.toMutableMap()
+                            foundDevs.forEach { dev ->
+                                val cleanMac = dev.macAddress.replace("-", ":").uppercase()
+                                val existing = currentMap[cleanMac]
+                                if (existing != null) {
+                                    currentMap[cleanMac] = existing.copy(ipAddress = dev.ipAddress)
+                                } else {
+                                    currentMap[cleanMac] = dev
+                                }
+                            }
+                            updated.devices = currentMap.values.toList()
+                            onLog("تم العثور على ${foundDevs.size} جهاز متصل في D-Link ($page)")
+                        }
+                    }
+                }
+                if (updated.devices.isNotEmpty()) break
+            } catch (_: Exception) {}
+        }
+
+        updated
+    }
+
     suspend fun refreshHuawei(profile: RouterProfile, onLog: (String) -> Unit): RouterProfile = withContext(Dispatchers.IO) {
         val updated = profile.copy()
 
@@ -324,12 +430,58 @@ class RouterRepository {
     }
 
     suspend fun toggleBlockDevice(profile: RouterProfile, device: NetworkDevice, block: Boolean, onLog: (String) -> Unit): Boolean = withContext(Dispatchers.IO) {
+        if (profile.firmware == FirmwareType.HUAWEI_B311) {
+            toggleBlockHuawei(profile, device, block, onLog)
+        } else {
+            toggleBlockDLink(profile, device, block, onLog)
+        }
+    }
+
+    private fun toggleBlockDLink(profile: RouterProfile, device: NetworkDevice, block: Boolean, onLog: (String) -> Unit): Boolean {
+        try {
+            val endpoints = if (profile.firmware == FirmwareType.GENERIC_REALTEK) {
+                listOf("http://${profile.routerIP}/boaform/admin/formWlanSetup", "http://${profile.routerIP}/form2WlanSetup.cgi")
+            } else {
+                listOf("http://${profile.routerIP}/form2WlanSetup.cgi", "http://${profile.routerIP}/boaform/admin/formWlanSetup")
+            }
+
+            val action = if (block) "add" else "delete"
+            val formBody = "action=$action&mac=${device.macAddress}&filter_mode=deny"
+                .toRequestBody("application/x-www-form-urlencoded".toMediaType())
+
+            for (ep in endpoints) {
+                try {
+                    val reqBuilder = Request.Builder()
+                        .url(ep)
+                        .post(formBody)
+                    if (!currentSessionCookie.isNullOrBlank()) {
+                        reqBuilder.addHeader("Cookie", currentSessionCookie!!)
+                    }
+                    val ok = client.newCall(reqBuilder.build()).execute().use { res ->
+                        res.isSuccessful || res.code in 200..399
+                    }
+                    if (ok) {
+                        device.isBlocked = block
+                        onLog("✅ ${if (block) "تم حظر وفصل" else "تم إلغاء حظر"} الجهاز: ${device.displayName}")
+                        return true
+                    }
+                } catch (_: Exception) {}
+            }
+            onLog("❌ تعذر إرسال أمر الحظر لراوتر D-Link")
+            return false
+        } catch (e: Exception) {
+            onLog("خطأ في أمر حظر D-Link: ${e.message}")
+            return false
+        }
+    }
+
+    private fun toggleBlockHuawei(profile: RouterProfile, device: NetworkDevice, block: Boolean, onLog: (String) -> Unit): Boolean {
         try {
             // 1. ضمان وجود جلسة دخول مصادق عليها وصالحة (لتفادي خطأ 100003 و 125003)
             val sessionReady = ensureAuthenticatedSession(profile, onLog)
             if (!sessionReady) {
                 onLog("❌ تعذر توثيق الجلسة مع الراوتر قبل إرسال أمر الحظر")
-                return@withContext false
+                return false
             }
 
             // 2. جلب رمز تحقق طازج مرتبط بالجلسة النشطة
@@ -380,10 +532,10 @@ $entriesXml                        </Ssid>
                 device.isBlocked = block
                 onLog("✅ ${if (block) "تم حظر وفصل" else "تم إلغاء حظر"}: ${device.displayName}")
             }
-            success
+            return success
         } catch (e: Exception) {
             onLog("خطأ في أمر الحظر: ${e.message}")
-            false
+            return false
         }
     }
 
@@ -477,6 +629,52 @@ $entriesXml                        </Ssid>
             }
         }
         return results
+    }
+
+    private fun extractWANBytesFromDLink(html: String): Long? {
+        val pattern = """\b(\d{7,16})\b""".toRegex()
+        val matches = pattern.findAll(html)
+        var maxBytes = 0L
+        for (m in matches) {
+            val v = m.groupValues[1].toLongOrNull() ?: continue
+            if (v in 1_000_000L..9_000_000_000_000_000L && v > maxBytes) {
+                maxBytes = v
+            }
+        }
+        return if (maxBytes > 0L) maxBytes else null
+    }
+
+    private fun parseDLinkClients(html: String): List<NetworkDevice> {
+        val list = mutableListOf<NetworkDevice>()
+        val seen = mutableSetOf<String>()
+        val macRegex = """([0-9A-Fa-f]{2}[:-]){5}([0-9A-Fa-f]{2})""".toRegex()
+        val ipRegex = """\b(?:(?:25[0-5]|2[0-4][0-9]|[01]?[0-9][0-9]?)\.){3}(?:25[0-5]|2[0-4][0-9]|[01]?[0-9][0-9]?)\b""".toRegex()
+
+        val trPattern = """<tr[^>]*>([\s\S]*?)</tr>""".toRegex(RegexOption.IGNORE_CASE)
+        trPattern.findAll(html).forEach { match ->
+            val row = match.groupValues[1]
+            val macMatch = macRegex.find(row)
+            val ipMatch = ipRegex.find(row)
+            if (macMatch != null) {
+                val cleanMac = macMatch.value.replace("-", ":").uppercase()
+                if (cleanMac !in seen && cleanMac != "00:00:00:00:00:00" && cleanMac != "FF:FF:FF:FF:FF:FF") {
+                    seen.add(cleanMac)
+                    val ip = ipMatch?.value ?: "192.168.1.50"
+                    val cleanText = row.replace("""<[^>]*>""".toRegex(), " ")
+                    val parts = cleanText.split("""\s+""".toRegex()).filter { it.isNotBlank() && it != cleanMac && it != ip }
+                    val hostname = parts.firstOrNull { it.length in 2..30 && !it.contains(":") } ?: ""
+                    list.add(
+                        NetworkDevice(
+                            ipAddress = ip,
+                            macAddress = cleanMac,
+                            originalHostname = hostname,
+                            isOnline = true
+                        )
+                    )
+                }
+            }
+        }
+        return list
     }
 
     data class Quad<A, B, C, D>(val first: A, val second: B, val third: C, val fourth: D)

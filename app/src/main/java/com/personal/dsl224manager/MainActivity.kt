@@ -122,7 +122,7 @@ fun MainScreen(repo: RouterRepository) {
         scope.launch {
             isLoading = true
             log("جاري تحديث بيانات الراوتر (${activeRouter.name})...")
-            var updated = repo.refreshHuawei(activeRouter) { log(it) }
+            var updated = repo.refreshRouter(activeRouter) { log(it) }
 
             // تفعيل WebUI Fallback التلقائي إذا تعذرت القراءة أو كان الاستهلاك صفراً
             if (updated.accumulatedBytes == 0L && updated.enableWebUIFallback) {
@@ -293,11 +293,24 @@ fun MainScreen(repo: RouterRepository) {
                         storage.saveRouters(routers, it)
                     },
                     onAddRouter = {
-                        val newR = RouterProfile(name = "راوتر جديد ${routers.size + 1}")
+                        val hasDLink = routers.any { it.firmware == FirmwareType.ME110_BOA }
+                        val newR = if (!hasDLink) {
+                            RouterProfile(
+                                name = "راوتر D-Link (DSL-224)",
+                                routerIP = "192.168.1.1",
+                                firmware = FirmwareType.ME110_BOA
+                            )
+                        } else {
+                            RouterProfile(
+                                name = "راوتر جديد ${routers.size + 1}",
+                                routerIP = "192.168.1.1",
+                                firmware = FirmwareType.ME110_BOA
+                            )
+                        }
                         routers = routers + newR
                         activeRouterIndex = routers.lastIndex
                         storage.saveRouters(routers, activeRouterIndex)
-                        log("تمت إضافة راوتر جديد وحفظه")
+                        log("تمت إضافة راوتر (${newR.name}) بنجاح")
                     },
                     onDeleteRouter = { idx ->
                         if (routers.size > 1) {
@@ -1134,6 +1147,7 @@ fun SettingsTab(
     var username by remember(router) { mutableStateOf(router.username) }
     var password by remember(router) { mutableStateOf(router.password) }
     var passwordVisible by remember { mutableStateOf(false) }
+    var firmware by remember(router) { mutableStateOf(router.firmware) }
     var totalPlanGB by remember(router) { mutableStateOf(router.totalPlanGB.toInt().toString()) }
     var enableFallback by remember(router) { mutableStateOf(router.enableWebUIFallback) }
 
@@ -1161,6 +1175,61 @@ fun SettingsTab(
                         singleLine = true,
                         modifier = Modifier.fillMaxWidth()
                     )
+
+                    // اختيار نوع وبروتوكول الراوتر
+                    Text("نوع وبروتوكول الراوتر (Firmware / Protocol)", fontWeight = FontWeight.SemiBold, fontSize = 13.sp)
+                    Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                        FirmwareType.values().forEach { fw ->
+                            val isSelected = firmware == fw
+                            Card(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .clickable {
+                                        firmware = fw
+                                        if (ip.isBlank() || ip == "192.168.1.1" || ip == "192.168.8.1") {
+                                            ip = if (fw == FirmwareType.HUAWEI_B311) "192.168.8.1" else "192.168.1.1"
+                                        }
+                                    },
+                                shape = RoundedCornerShape(8.dp),
+                                colors = CardDefaults.cardColors(
+                                    containerColor = if (isSelected) MaterialTheme.colorScheme.primary.copy(alpha = 0.15f) else MaterialTheme.colorScheme.surfaceVariant
+                                ),
+                                border = if (isSelected) androidx.compose.foundation.BorderStroke(1.dp, MaterialTheme.colorScheme.primary) else null
+                            ) {
+                                Row(
+                                    modifier = Modifier
+                                        .fillMaxWidth()
+                                        .padding(horizontal = 10.dp, vertical = 8.dp),
+                                    verticalAlignment = Alignment.CenterVertically
+                                ) {
+                                    RadioButton(
+                                        selected = isSelected,
+                                        onClick = {
+                                            firmware = fw
+                                            if (ip.isBlank() || ip == "192.168.1.1" || ip == "192.168.8.1") {
+                                                ip = if (fw == FirmwareType.HUAWEI_B311) "192.168.8.1" else "192.168.1.1"
+                                            }
+                                        },
+                                        colors = RadioButtonDefaults.colors(selectedColor = MaterialTheme.colorScheme.primary)
+                                    )
+                                    Spacer(Modifier.width(6.dp))
+                                    Column {
+                                        Text(fw.displayName, fontSize = 12.sp, fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Normal)
+                                        Text(
+                                            when (fw) {
+                                                FirmwareType.ME110_BOA -> "بروتوكول Boa / login.cgi / status_traffic.html (D-Link DSL-224)"
+                                                FirmwareType.HUAWEI_B311 -> "بروتوكول HiLink API / SCRAM-SHA256 (Huawei B311)"
+                                                FirmwareType.GENERIC_REALTEK -> "بروتوكول Realtek / boaform (Generic D-Link)"
+                                            },
+                                            fontSize = 10.sp,
+                                            color = Color.Gray
+                                        )
+                                    }
+                                }
+                            }
+                        }
+                    }
+
                     OutlinedTextField(
                         value = ip,
                         onValueChange = { ip = it },
@@ -1228,6 +1297,7 @@ fun SettingsTab(
                                 routerIP = ip.trim(),
                                 username = username.trim(),
                                 password = password.trim(),
+                                firmware = firmware,
                                 totalPlanGB = totalPlanGB.toDoubleOrNull() ?: 140.0,
                                 enableWebUIFallback = enableFallback
                             )

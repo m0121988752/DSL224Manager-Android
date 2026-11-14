@@ -76,11 +76,28 @@ class RouterStorage(context: Context) {
             val list = mutableListOf<RouterProfile>()
             for (i in 0 until arr.length()) {
                 val obj = arr.getJSONObject(i)
-                val firmwareStr = obj.optString("firmware", FirmwareType.HUAWEI_B311.name)
+                val rawFirmware = obj.optString("firmware", "")
+                val routerName = obj.optString("name", "راوتر D-Link (DSL-224)")
                 val firmware = try {
-                    FirmwareType.valueOf(firmwareStr)
+                    if (rawFirmware.isNotBlank()) {
+                        FirmwareType.valueOf(rawFirmware)
+                    } else {
+                        if (routerName.contains("224", ignoreCase = true) ||
+                            routerName.contains("d-link", ignoreCase = true) ||
+                            routerName.contains("dlink", ignoreCase = true)) {
+                            FirmwareType.ME110_BOA
+                        } else {
+                            FirmwareType.HUAWEI_B311
+                        }
+                    }
                 } catch (_: Exception) {
-                    FirmwareType.HUAWEI_B311
+                    if (routerName.contains("224", ignoreCase = true) ||
+                        routerName.contains("d-link", ignoreCase = true) ||
+                        routerName.contains("dlink", ignoreCase = true)) {
+                        FirmwareType.ME110_BOA
+                    } else {
+                        FirmwareType.HUAWEI_B311
+                    }
                 }
 
                 val devsList = mutableListOf<NetworkDevice>()
@@ -104,7 +121,7 @@ class RouterStorage(context: Context) {
                 list.add(
                     RouterProfile(
                         id = obj.optString("id", java.util.UUID.randomUUID().toString()),
-                        name = obj.optString("name", "راوتر Huawei 4G"),
+                        name = routerName,
                         routerIP = obj.optString("routerIP", "192.168.1.1"),
                         username = obj.optString("username", "admin"),
                         password = obj.optString("password", ""),
@@ -137,8 +154,16 @@ class RouterStorage(context: Context) {
 
     private fun defaultProfiles(): List<RouterProfile> = listOf(
         RouterProfile(
-            name = "راوتر Huawei 4G",
+            name = "راوتر D-Link (DSL-224)",
             routerIP = "192.168.1.1",
+            username = "admin",
+            password = "",
+            firmware = FirmwareType.ME110_BOA,
+            totalPlanGB = 140.0
+        ),
+        RouterProfile(
+            name = "راوتر Huawei 4G (B311)",
+            routerIP = "192.168.8.1",
             username = "admin",
             password = "",
             firmware = FirmwareType.HUAWEI_B311,
