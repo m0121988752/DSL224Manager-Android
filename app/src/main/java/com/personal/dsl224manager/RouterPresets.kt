@@ -392,7 +392,7 @@ fun PresetsLibraryDialog(
                                 horizontalArrangement = Arrangement.SpaceBetween,
                                 verticalAlignment = Alignment.CenterVertically
                             ) {
-                                Column(verticalAlignment = Alignment.Start) {
+                                Column(horizontalAlignment = Alignment.Start) {
                                     Text(preset.name, fontWeight = FontWeight.Bold, fontSize = 13.sp, color = Color.White)
                                     Text(
                                         "${preset.manufacturer} • ${preset.defaultIP}",
