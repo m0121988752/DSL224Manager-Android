@@ -33,6 +33,62 @@ class RouterRepository {
         }
     }
 
+    /**
+     * اختبار الاتصال وتسجيل الدخول ببيانات الاعتماد للراوتر
+     */
+    suspend fun testConnection(profile: RouterProfile, onLog: (String) -> Unit): Boolean = withContext(Dispatchers.IO) {
+        try {
+            when (profile.firmware) {
+                FirmwareType.HUAWEI_B311 -> {
+                    if (profile.password.isBlank()) {
+                        onLog("⚠️ يرجى إدخال كلمة المرور أولاً")
+                        return@withContext false
+                    }
+                    val ok = ensureAuthenticatedSession(profile, onLog)
+                    if (ok) {
+                        onLog("✅ تم تسجيل الدخول لراوتر هواوي بنجاح")
+                    } else {
+                        onLog("❌ فشل تسجيل الدخول، تأكد من صحة كلمة المرور")
+                    }
+                    ok
+                }
+                FirmwareType.ME110_BOA, FirmwareType.GENERIC_REALTEK -> {
+                    val loginEndpoints = if (profile.firmware == FirmwareType.GENERIC_REALTEK) {
+                        listOf("http://${profile.routerIP}/boaform/admin/formLogin", "http://${profile.routerIP}/login.cgi")
+                    } else {
+                        listOf("http://${profile.routerIP}/login.cgi", "http://${profile.routerIP}/boaform/admin/formLogin")
+                    }
+                    var success = false
+                    for (ep in loginEndpoints) {
+                        try {
+                            val formBody = "username=${profile.username}&password=${profile.password}"
+                                .toRequestBody("application/x-www-form-urlencoded".toMediaType())
+                            val loginReq = Request.Builder().url(ep).post(formBody).build()
+                            val ok = client.newCall(loginReq).execute().use { res ->
+                                res.isSuccessful || res.code in 200..399
+                            }
+                            if (ok) {
+                                success = true
+                                break
+                            }
+                        } catch (_: Exception) {}
+                    }
+                    if (success) {
+                        onLog("✅ تم تسجيل الدخول لراوتر D-Link بنجاح")
+                    } else {
+                        onLog("❌ فشل الاتصال براوتر D-Link (${profile.routerIP})")
+                    }
+                    success
+                }
+            }
+        } catch (e: Exception) {
+            onLog("❌ خطأ أثناء الاتصال: ${e.localizedMessage}")
+            false
+        }
+    }
+
+    suspend fun loginAndRefresh(profile: RouterProfile, onLog: (String) -> Unit): Boolean = testConnection(profile, onLog)
+
     suspend fun refreshDLink(profile: RouterProfile, onLog: (String) -> Unit): RouterProfile = withContext(Dispatchers.IO) {
         val updated = profile.copy()
         onLog("الاتصال براوتر D-Link DSL-224 (${profile.routerIP})...")
