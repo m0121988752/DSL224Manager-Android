@@ -40,6 +40,9 @@ class RouterStorage(context: Context) {
                 put("customUsageUnit", profile.customUsageUnit)
                 put("customDeviceTableSelector", profile.customDeviceTableSelector)
                 put("customRebootButtonSelector", profile.customRebootButtonSelector)
+                put("customUsernameSelector", profile.customUsernameSelector)
+                put("customPasswordSelector", profile.customPasswordSelector)
+                put("customLoginButtonSelector", profile.customLoginButtonSelector)
 
                 // حفظ أسماء وتفاصيل الأجهزة
                 val devsArr = JSONArray()
@@ -118,7 +121,10 @@ class RouterStorage(context: Context) {
                         customUsageRegex = obj.optString("customUsageRegex", ""),
                         customUsageUnit = obj.optString("customUsageUnit", "Auto"),
                         customDeviceTableSelector = obj.optString("customDeviceTableSelector", ""),
-                        customRebootButtonSelector = obj.optString("customRebootButtonSelector", "")
+                        customRebootButtonSelector = obj.optString("customRebootButtonSelector", ""),
+                        customUsernameSelector = obj.optString("customUsernameSelector", ""),
+                        customPasswordSelector = obj.optString("customPasswordSelector", ""),
+                        customLoginButtonSelector = obj.optString("customLoginButtonSelector", "")
                     )
                 )
             }

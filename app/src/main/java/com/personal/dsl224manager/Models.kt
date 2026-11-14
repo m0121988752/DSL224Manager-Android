@@ -41,11 +41,73 @@ data class RouterProfile(
     var customUsageRegex: String = "",
     var customUsageUnit: String = "Auto", // Auto, GB, MB, Bytes
     var customDeviceTableSelector: String = "",
-    var customRebootButtonSelector: String = ""
+    var customRebootButtonSelector: String = "",
+    var customUsernameSelector: String = "",
+    var customPasswordSelector: String = "",
+    var customLoginButtonSelector: String = ""
 ) {
     val usedGB: Double get() = accumulatedBytes.toDouble() / (1024.0 * 1024.0 * 1024.0)
     val remainingGB: Double get() = (totalPlanGB - usedGB).coerceAtLeast(0.0)
     val usedPercentage: Double get() = if (totalPlanGB > 0) ((usedGB / totalPlanGB) * 100).coerceIn(0.0, 100.0) else 0.0
+}
+
+enum class ElementAssignmentAction {
+    USAGE_COUNTER,
+    DEVICES_TABLE,
+    REBOOT_BUTTON,
+    USERNAME_INPUT,
+    PASSWORD_INPUT,
+    LOGIN_BUTTON,
+    COPY_SELECTOR
+}
+
+enum class SuggestedElementType(val title: String) {
+    USAGE_COUNTER("عداد استهلاك الباقة"),
+    DEVICES_TABLE("جدول الأجهزة المتصلة"),
+    REBOOT_BUTTON("زر إعادة التشغيل"),
+    USERNAME_INPUT("حقل اسم المستخدم"),
+    PASSWORD_INPUT("حقل كلمة المرور"),
+    LOGIN_BUTTON("زر تسجيل الدخول"),
+    UNKNOWN("عنصر عام")
+}
+
+data class PickedElementInfo(
+    val selector: String,
+    val tag: String,
+    val text: String,
+    val value: String,
+    val url: String
+) {
+    val suggestedType: SuggestedElementType
+        get() {
+            val full = "$text $value $selector".lowercase()
+            return when {
+                full.contains("gb") || full.contains("mb") || full.contains("kb") ||
+                full.contains("bytes") || full.contains("traffic") || full.contains("usage") ||
+                full.contains("download") || full.contains("باقة") || full.contains("استهلاك") ->
+                    SuggestedElementType.USAGE_COUNTER
+
+                tag.equals("table", ignoreCase = true) || tag.equals("tbody", ignoreCase = true) ||
+                full.contains("device") || full.contains("host") || full.contains("dhcp") ||
+                full.contains("mac") || full.contains("client") || full.contains("أجهزة") ->
+                    SuggestedElementType.DEVICES_TABLE
+
+                full.contains("reboot") || full.contains("restart") || full.contains("إعادة التشغيل") ->
+                    SuggestedElementType.REBOOT_BUTTON
+
+                tag.equals("input", ignoreCase = true) && (full.contains("user") || full.contains("login") || full.contains("اسم المستخدم")) ->
+                    SuggestedElementType.USERNAME_INPUT
+
+                tag.equals("input", ignoreCase = true) && (full.contains("pass") || full.contains("pwd") || full.contains("كلمة المرور")) ->
+                    SuggestedElementType.PASSWORD_INPUT
+
+                (tag.equals("button", ignoreCase = true) || tag.equals("input", ignoreCase = true) || tag.equals("a", ignoreCase = true)) &&
+                (full.contains("login") || full.contains("signin") || full.contains("دخول")) ->
+                    SuggestedElementType.LOGIN_BUTTON
+
+                else -> SuggestedElementType.UNKNOWN
+            }
+        }
 }
 
 enum class SemanticButtonAction(val label: String) {

@@ -1,6 +1,13 @@
 package com.personal.dsl224manager
 
+import android.content.Context
 import android.os.Bundle
+import android.webkit.JavascriptInterface
+import android.webkit.WebChromeClient
+import android.webkit.WebResourceError
+import android.webkit.WebResourceRequest
+import android.webkit.WebView
+import android.webkit.WebViewClient
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.compose.foundation.background
@@ -27,7 +34,11 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.LayoutDirection
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import androidx.compose.ui.viewinterop.AndroidView
+import androidx.compose.ui.window.Dialog
+import androidx.compose.ui.window.DialogProperties
 import kotlinx.coroutines.launch
+import org.json.JSONObject
 
 class MainActivity : ComponentActivity() {
     private val repo = RouterRepository()
@@ -88,6 +99,7 @@ fun MainScreen(repo: RouterRepository) {
 
     // حوار متصفح أزرار WebUI
     var showWebUIDialog by remember { mutableStateOf(false) }
+    var initialPickerMode by remember { mutableStateOf(false) }
     var lastScrapeResult by remember { mutableStateOf<WebUIScrapeResult?>(null) }
 
     // حوار التخصيص المرئي للكشط بدون كود (No-Code Scraper Customization)
@@ -141,6 +153,17 @@ fun MainScreen(repo: RouterRepository) {
                     }
                 },
                 actions = {
+                    // زر فتح متصفح الراوتر والالتقاط البصري المباشر
+                    IconButton(
+                        onClick = {
+                            initialPickerMode = true
+                            showWebUIDialog = true
+                        },
+                        enabled = !isLoading
+                    ) {
+                        Icon(Icons.Default.Adjust, contentDescription = "التقاط عنصر بصري", tint = Color(0xFF30D158))
+                    }
+
                     // زر التخصيص بدون كود (No-Code Scraper Customizer)
                     IconButton(
                         onClick = { showNoCodeDialog = true },
@@ -292,7 +315,14 @@ fun MainScreen(repo: RouterRepository) {
                         updateActiveRouter(updated)
                         log("تم حفظ بيانات الراوتر بنجاح في الهاتف")
                     },
-                    onOpenWebUI = { showWebUIDialog = true },
+                    onOpenWebUI = {
+                        initialPickerMode = false
+                        showWebUIDialog = true
+                    },
+                    onOpenVisualPicker = {
+                        initialPickerMode = true
+                        showWebUIDialog = true
+                    },
                     onOpenNoCode = { showNoCodeDialog = true }
                 )
             }
@@ -341,110 +371,16 @@ fun MainScreen(repo: RouterRepository) {
         )
     }
 
-    // حوار التحكم في واجهة الويب وأزرارها المكتشفة
+    // حوار متصفح الويب المباشر والالتقاط البصري لأي راوتر بدون كود
     if (showWebUIDialog) {
-        AlertDialog(
-            onDismissRequest = { showWebUIDialog = false },
-            title = { Text("التحكم التفاعلي في أزرار WebUI", fontWeight = FontWeight.Bold) },
-            text = {
-                LazyColumn(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .heightIn(max = 400.dp),
-                    verticalArrangement = Arrangement.spacedBy(8.dp)
-                ) {
-                    item {
-                        Text(
-                            "يمكنك الضغط مباشرة على أي زر مكتشف في صفحة الراوتر لتنفيذه عبر المتصفح:",
-                            fontSize = 12.sp,
-                            color = Color.Gray
-                        )
-                    }
-
-                    // أزرار دلالية سريعة
-                    item {
-                        Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                            Button(
-                                onClick = {
-                                    scope.launch {
-                                        log("جاري إرسال إعادة التشغيل...")
-                                        val (ok, msg) = webUI.pressButton(
-                                            selector = activeRouter.customRebootButtonSelector.takeIf { it.isNotBlank() },
-                                            semanticAction = SemanticButtonAction.REBOOT
-                                        )
-                                        log(if (ok) "✅ $msg" else "❌ $msg")
-                                        showWebUIDialog = false
-                                    }
-                                },
-                                modifier = Modifier.weight(1f),
-                                colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.error)
-                            ) {
-                                Text("إعادة التشغيل", fontSize = 11.sp)
-                            }
-
-                            Button(
-                                onClick = {
-                                    scope.launch {
-                                        log("جاري تنفيذ تسجيل الدخول عبر المتصفح...")
-                                        val (ok, msg) = webUI.pressButton(semanticAction = SemanticButtonAction.LOGIN)
-                                        log(if (ok) "✅ $msg" else "❌ $msg")
-                                    }
-                                },
-                                modifier = Modifier.weight(1f),
-                                colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.primary)
-                            ) {
-                                Text("دخول تلقائي", fontSize = 11.sp)
-                            }
-                        }
-                    }
-
-                    item {
-                        Divider(modifier = Modifier.padding(vertical = 4.dp))
-                        Text("الأزرار المكتشفة في الصفحة (${lastScrapeResult?.buttons?.size ?: 0}):", fontWeight = FontWeight.Bold, fontSize = 13.sp)
-                    }
-
-                    val btns = lastScrapeResult?.buttons ?: emptyList()
-                    if (btns.isEmpty()) {
-                        item {
-                            Text("لم يتم كشط أزرار بعد، اضغط على زر كشط WebUI في الأعلى أولاً.", color = Color.Gray, fontSize = 12.sp)
-                        }
-                    } else {
-                        items(btns) { btn ->
-                            Card(
-                                modifier = Modifier
-                                    .fillMaxWidth()
-                                    .clickable {
-                                        scope.launch {
-                                            log("جاري النقر على: ${btn.displayLabel}...")
-                                            val (ok, msg) = webUI.pressButton(selector = btn.selector)
-                                            log(if (ok) "✅ $msg" else "❌ $msg")
-                                        }
-                                    },
-                                colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant),
-                                shape = RoundedCornerShape(8.dp)
-                            ) {
-                                Row(
-                                    modifier = Modifier
-                                        .fillMaxWidth()
-                                        .padding(10.dp),
-                                    verticalAlignment = Alignment.CenterVertically,
-                                    horizontalArrangement = Arrangement.SpaceBetween
-                                ) {
-                                    Column(modifier = Modifier.weight(1f)) {
-                                        Text(btn.displayLabel, fontWeight = FontWeight.SemiBold, fontSize = 13.sp)
-                                        Text(btn.selector, fontSize = 10.sp, color = Color.Gray, maxLines = 1, overflow = TextOverflow.Ellipsis)
-                                    }
-                                    Icon(Icons.Default.TouchApp, contentDescription = null, tint = MaterialTheme.colorScheme.primary)
-                                }
-                            }
-                        }
-                    }
-                }
-            },
-            confirmButton = {
-                TextButton(onClick = { showWebUIDialog = false }) {
-                    Text("إغلاق")
-                }
+        RouterWebUIDialog(
+            router = activeRouter,
+            webUI = webUI,
+            initialPickerMode = initialPickerMode,
+            onDismiss = { showWebUIDialog = false },
+            onRouterUpdated = { updated ->
+                updateActiveRouter(updated)
+                log("تم تحديث إعدادات راوتر ${updated.name} بدون كود بنجاح")
             }
         )
     }
@@ -458,6 +394,11 @@ fun MainScreen(repo: RouterRepository) {
                 updateActiveRouter(updated)
                 showNoCodeDialog = false
                 log("✅ تم حفظ إعدادات الكشط المخصصة (No-Code Config)")
+            },
+            onOpenVisualPicker = {
+                showNoCodeDialog = false
+                initialPickerMode = true
+                showWebUIDialog = true
             },
             onTestScrape = { testProfile ->
                 scope.launch {
@@ -483,6 +424,7 @@ fun NoCodeScraperDialog(
     router: RouterProfile,
     onDismiss: () -> Unit,
     onSave: (RouterProfile) -> Unit,
+    onOpenVisualPicker: () -> Unit,
     onTestScrape: (RouterProfile) -> Unit
 ) {
     var usageSelector by remember { mutableStateOf(router.customUsageSelector) }
@@ -490,6 +432,9 @@ fun NoCodeScraperDialog(
     var usageUnit by remember { mutableStateOf(router.customUsageUnit) }
     var deviceTableSelector by remember { mutableStateOf(router.customDeviceTableSelector) }
     var rebootBtnSelector by remember { mutableStateOf(router.customRebootButtonSelector) }
+    var usernameSelector by remember { mutableStateOf(router.customUsernameSelector) }
+    var passwordSelector by remember { mutableStateOf(router.customPasswordSelector) }
+    var loginBtnSelector by remember { mutableStateOf(router.customLoginButtonSelector) }
     var webPath by remember { mutableStateOf(router.webUIPath) }
 
     // قوالب سريعة جاهزة بدون كود (Quick Presets)
@@ -515,10 +460,24 @@ fun NoCodeScraperDialog(
                     .heightIn(max = 480.dp),
                 verticalArrangement = Arrangement.spacedBy(10.dp)
             ) {
+                // زر الالتقاط البصري المباشر بالنقر
+                item {
+                    Button(
+                        onClick = onOpenVisualPicker,
+                        modifier = Modifier.fillMaxWidth(),
+                        colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF30D158)),
+                        shape = RoundedCornerShape(10.dp)
+                    ) {
+                        Icon(Icons.Default.Adjust, contentDescription = null, tint = Color.Black)
+                        Spacer(Modifier.width(8.dp))
+                        Text("فتح المتصفح والتقاط العناصر بالنقر 🎯", color = Color.Black, fontWeight = FontWeight.Bold, fontSize = 13.sp)
+                    }
+                }
+
                 item {
                     Text(
-                        "حدد عناصر الصفحة ومسارها بدون كتابة كود برمجياً لكشط أي راوتر مخصص:",
-                        fontSize = 12.sp,
+                        "أو قم بتخصيص المحددات يدوياً إذا كنت تفضل ذلك لأي نوع راوتر:",
+                        fontSize = 11.sp,
                         color = Color.Gray
                     )
                 }
@@ -615,6 +574,39 @@ fun NoCodeScraperDialog(
                 }
 
                 item {
+                    OutlinedTextField(
+                        value = usernameSelector,
+                        onValueChange = { usernameSelector = it },
+                        label = { Text("محدد حقل اسم المستخدم (Username Selector)") },
+                        placeholder = { Text("مثال: #username أو input[name='user']") },
+                        singleLine = true,
+                        modifier = Modifier.fillMaxWidth()
+                    )
+                }
+
+                item {
+                    OutlinedTextField(
+                        value = passwordSelector,
+                        onValueChange = { passwordSelector = it },
+                        label = { Text("محدد حقل كلمة المرور (Password Selector)") },
+                        placeholder = { Text("مثال: #password أو input[type='password']") },
+                        singleLine = true,
+                        modifier = Modifier.fillMaxWidth()
+                    )
+                }
+
+                item {
+                    OutlinedTextField(
+                        value = loginBtnSelector,
+                        onValueChange = { loginBtnSelector = it },
+                        label = { Text("محدد زر تسجيل الدخول (Login Selector)") },
+                        placeholder = { Text("مثال: #login_btn أو button[type='submit']") },
+                        singleLine = true,
+                        modifier = Modifier.fillMaxWidth()
+                    )
+                }
+
+                item {
                     Button(
                         onClick = {
                             val testProfile = router.copy(
@@ -623,7 +615,10 @@ fun NoCodeScraperDialog(
                                 customUsageRegex = usageRegex.trim(),
                                 customUsageUnit = usageUnit,
                                 customDeviceTableSelector = deviceTableSelector.trim(),
-                                customRebootButtonSelector = rebootBtnSelector.trim()
+                                customRebootButtonSelector = rebootBtnSelector.trim(),
+                                customUsernameSelector = usernameSelector.trim(),
+                                customPasswordSelector = passwordSelector.trim(),
+                                customLoginButtonSelector = loginBtnSelector.trim()
                             )
                             onTestScrape(testProfile)
                         },
@@ -646,7 +641,10 @@ fun NoCodeScraperDialog(
                         customUsageRegex = usageRegex.trim(),
                         customUsageUnit = usageUnit,
                         customDeviceTableSelector = deviceTableSelector.trim(),
-                        customRebootButtonSelector = rebootBtnSelector.trim()
+                        customRebootButtonSelector = rebootBtnSelector.trim(),
+                        customUsernameSelector = usernameSelector.trim(),
+                        customPasswordSelector = passwordSelector.trim(),
+                        customLoginButtonSelector = loginBtnSelector.trim()
                     )
                     onSave(updated)
                 }
@@ -1128,6 +1126,7 @@ fun SettingsTab(
     router: RouterProfile,
     onSave: (RouterProfile) -> Unit,
     onOpenWebUI: () -> Unit,
+    onOpenVisualPicker: () -> Unit,
     onOpenNoCode: () -> Unit
 ) {
     var name by remember(router) { mutableStateOf(router.name) }
@@ -1279,7 +1278,18 @@ fun SettingsTab(
             ) {
                 Column(modifier = Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
                     Text("أدوات متصفح WebUI التفاعلي", fontWeight = FontWeight.Bold, fontSize = 14.sp)
-                    Text("فتح لوحة التحكم بأزرار صفحة الراوتر وإدارتها برمجياً.", fontSize = 12.sp, color = Color.Gray)
+                    Text("فتح متصفح الراوتر المباشر لاختيار العناصر بدون كود أو التحكم بالأزرار برمجياً.", fontSize = 12.sp, color = Color.Gray)
+
+                    Button(
+                        onClick = onOpenVisualPicker,
+                        modifier = Modifier.fillMaxWidth(),
+                        colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF1E3A24))
+                    ) {
+                        Icon(Icons.Default.Adjust, contentDescription = null, tint = Color(0xFF30D158))
+                        Spacer(Modifier.width(8.dp))
+                        Text("فتح متصفح الراوتر والالتقاط البصري 🎯", color = Color.White, fontWeight = FontWeight.Bold)
+                    }
+
                     Button(
                         onClick = onOpenWebUI,
                         modifier = Modifier.fillMaxWidth(),
@@ -1287,10 +1297,884 @@ fun SettingsTab(
                     ) {
                         Icon(Icons.Default.Language, contentDescription = null, tint = Color(0xFFFF9F0A))
                         Spacer(Modifier.width(8.dp))
-                        Text("فتح لوحة تحكم أزرار WebUI", color = Color.White)
+                        Text("فتح متصفح أزرار WebUI", color = Color.White)
                     }
                 }
             }
         }
     }
 }
+
+// ==================== متصفح الراوتر التفاعلي والالتقاط البصري بدون كود (Router WebUI Dialog) ====================
+class WebUIPickerBridge(
+    private val onElementPickedCallback: (PickedElementInfo) -> Unit
+) {
+    @JavascriptInterface
+    fun onElementPicked(jsonStr: String) {
+        try {
+            val obj = JSONObject(jsonStr)
+            val info = PickedElementInfo(
+                selector = obj.optString("selector"),
+                tag = obj.optString("tag"),
+                text = obj.optString("text"),
+                value = obj.optString("value"),
+                url = obj.optString("url")
+            )
+            onElementPickedCallback(info)
+        } catch (_: Exception) {}
+    }
+}
+
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+fun RouterWebUIDialog(
+    router: RouterProfile,
+    webUI: WebUIFallbackService,
+    initialPickerMode: Boolean = false,
+    onDismiss: () -> Unit,
+    onRouterUpdated: (RouterProfile) -> Unit
+) {
+    val context = LocalContext.current
+    val scope = rememberCoroutineScope()
+    var isPickerActive by remember { mutableStateOf(initialPickerMode) }
+    val baseURL = "http://${router.routerIP}"
+    val fullInitialURL = if (router.webUIPath.isNotBlank()) {
+        "$baseURL/${router.webUIPath.trim().removePrefix("/")}"
+    } else {
+        baseURL
+    }
+    var currentURL by remember { mutableStateOf(fullInitialURL) }
+    var addressInput by remember { mutableStateOf(fullInitialURL) }
+    var canGoBack by remember { mutableStateOf(false) }
+    var canGoForward by remember { mutableStateOf(false) }
+    var pageTitle by remember { mutableStateOf(router.name) }
+    var isLoading by remember { mutableStateOf(false) }
+    var toastMessage by remember { mutableStateOf<String?>(null) }
+    var webViewRef by remember { mutableStateOf<WebView?>(null) }
+
+    var pickedElement by remember { mutableStateOf<PickedElementInfo?>(null) }
+    var showAssignmentDialog by remember { mutableStateOf(false) }
+    var showButtonsListDialog by remember { mutableStateOf(false) }
+    var discoveredButtons by remember { mutableStateOf<List<WebUIButtonInfo>>(emptyList()) }
+
+    fun injectPickerScript(wv: WebView?) {
+        wv?.evaluateJavascript(START_PICKER_JS, null)
+    }
+
+    fun removePickerScript(wv: WebView?) {
+        wv?.evaluateJavascript(STOP_PICKER_JS, null)
+    }
+
+    fun togglePicker() {
+        val next = !isPickerActive
+        isPickerActive = next
+        if (next) {
+            toastMessage = "تم تفعيل وضع الالتقاط 🎯: المس أي عنصر في الصفحة لتعيينه"
+            injectPickerScript(webViewRef)
+        } else {
+            toastMessage = "تم إيقاف وضع الالتقاط"
+            removePickerScript(webViewRef)
+        }
+    }
+
+    Dialog(
+        onDismissRequest = onDismiss,
+        properties = DialogProperties(usePlatformDefaultWidth = false)
+    ) {
+        Scaffold(
+            topBar = {
+                Column(modifier = Modifier.fillMaxWidth().background(Color(0xFF1C1C1E))) {
+                    // Toolbar
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(horizontal = 8.dp, vertical = 6.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(4.dp)
+                    ) {
+                        IconButton(onClick = onDismiss) {
+                            Icon(Icons.Default.Close, contentDescription = "Close", tint = Color.White)
+                        }
+
+                        IconButton(
+                            onClick = { webViewRef?.goBack() },
+                            enabled = canGoBack
+                        ) {
+                            Icon(
+                                Icons.Default.ArrowForward,
+                                contentDescription = "Back",
+                                tint = if (canGoBack) Color.White else Color.Gray
+                            )
+                        }
+
+                        IconButton(
+                            onClick = { webViewRef?.goForward() },
+                            enabled = canGoForward
+                        ) {
+                            Icon(
+                                Icons.Default.ArrowBack,
+                                contentDescription = "Forward",
+                                tint = if (canGoForward) Color.White else Color.Gray
+                            )
+                        }
+
+                        IconButton(onClick = { webViewRef?.reload() }) {
+                            Icon(Icons.Default.Refresh, contentDescription = "Reload", tint = Color(0xFF0A84FF))
+                        }
+
+                        // Address bar
+                        OutlinedTextField(
+                            value = addressInput,
+                            onValueChange = { addressInput = it },
+                            modifier = Modifier
+                                .weight(1f)
+                                .height(46.dp),
+                            textStyle = androidx.compose.ui.text.TextStyle(fontSize = 12.sp, color = Color.White),
+                            singleLine = true,
+                            leadingIcon = {
+                                Icon(Icons.Default.Lock, contentDescription = null, tint = Color(0xFFFF9F0A), modifier = Modifier.size(14.dp))
+                            },
+                            trailingIcon = {
+                                IconButton(onClick = {
+                                    var clean = addressInput.trim()
+                                    if (!clean.startsWith("http://") && !clean.startsWith("https://")) {
+                                        clean = "http://$clean"
+                                    }
+                                    webViewRef?.loadUrl(clean)
+                                }) {
+                                    Icon(Icons.Default.ArrowCircleLeft, contentDescription = "Go", tint = Color(0xFF0A84FF), modifier = Modifier.size(18.dp))
+                                }
+                            }
+                        )
+
+                        // Visual Picker Mode Toggle
+                        Button(
+                            onClick = { togglePicker() },
+                            colors = ButtonDefaults.buttonColors(
+                                containerColor = if (isPickerActive) Color(0xFF30D158) else Color(0xFF2C2C2E)
+                            ),
+                            contentPadding = PaddingValues(horizontal = 8.dp, vertical = 4.dp),
+                            modifier = Modifier.height(38.dp)
+                        ) {
+                            Icon(
+                                Icons.Default.Adjust,
+                                contentDescription = null,
+                                tint = if (isPickerActive) Color.Black else Color(0xFF30D158),
+                                modifier = Modifier.size(16.dp)
+                            )
+                            Spacer(Modifier.width(4.dp))
+                            Text(
+                                if (isPickerActive) "إلغاء 🎯" else "التقاط 🎯",
+                                fontSize = 11.sp,
+                                color = if (isPickerActive) Color.Black else Color.White,
+                                fontWeight = FontWeight.Bold
+                            )
+                        }
+                    }
+
+                    // Banner when picker mode is active
+                    if (isPickerActive) {
+                        Row(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .background(Color(0xFF30D158))
+                                .padding(horizontal = 12.dp, vertical = 6.dp),
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.SpaceBetween
+                        ) {
+                            Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.weight(1f)) {
+                                Icon(Icons.Default.Adjust, contentDescription = null, tint = Color.Black, modifier = Modifier.size(16.dp))
+                                Spacer(Modifier.width(6.dp))
+                                Text(
+                                    "وضع التقاط العناصر مفعّل 🎯: المس أي عنصر في الصفحة لتعيينه فوراً بدون كود",
+                                    color = Color.Black,
+                                    fontSize = 11.sp,
+                                    fontWeight = FontWeight.Bold
+                                )
+                            }
+                            IconButton(onClick = { togglePicker() }, modifier = Modifier.size(24.dp)) {
+                                Icon(Icons.Default.Close, contentDescription = "Cancel", tint = Color.Black)
+                            }
+                        }
+                    }
+
+                    // Quick Actions Row
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .background(Color(0xFF141416))
+                            .padding(horizontal = 10.dp, vertical = 4.dp),
+                        horizontalArrangement = Arrangement.spacedBy(6.dp)
+                    ) {
+                        // زر دخول تلقائي
+                        SuggestionChip(
+                            onClick = {
+                                scope.launch {
+                                    toastMessage = "جارِ تعبئة بيانات الدخول..."
+                                    val ok = webUI.attemptAutoLogin(router.username, router.password, router, webViewRef)
+                                    toastMessage = if (ok) "تم إرسال بيانات الدخول بنجاح" else "لم يتم العثور على حقول الدخول"
+                                }
+                            },
+                            label = { Text("دخول تلقائي", fontSize = 11.sp) },
+                            icon = { Icon(Icons.Default.Key, contentDescription = null, modifier = Modifier.size(14.dp), tint = Color(0xFF0A84FF)) }
+                        )
+
+                        // زر كشط ومزامنة
+                        SuggestionChip(
+                            onClick = {
+                                scope.launch {
+                                    toastMessage = "جارِ كشط محتويات الصفحة..."
+                                    val res = webUI.scrapeCurrentPage(router, webViewRef)
+                                    discoveredButtons = res.buttons
+                                    if ((res.wanBytes ?: 0L) > 0L) {
+                                        val updated = router.copy(accumulatedBytes = res.wanBytes!!)
+                                        onRouterUpdated(updated)
+                                        val gb = res.wanBytes!!.toDouble() / (1024.0 * 1024.0 * 1024.0)
+                                        toastMessage = "تم كشط الاستهلاك: ${String.format(java.util.Locale.US, "%.2f", gb)} GB"
+                                    } else {
+                                        toastMessage = "اكتمل الكشط: تم العثور على ${res.buttons.size} زر"
+                                    }
+                                }
+                            },
+                            label = { Text("كشط ومزامنة", fontSize = 11.sp) },
+                            icon = { Icon(Icons.Default.Sync, contentDescription = null, modifier = Modifier.size(14.dp), tint = Color(0xFF30D158)) }
+                        )
+
+                        // زر ضغط Reboot
+                        SuggestionChip(
+                            onClick = {
+                                scope.launch {
+                                    toastMessage = "جارِ الضغط على زر إعادة التشغيل..."
+                                    val (ok, msg) = webUI.pressButton(
+                                        router = router,
+                                        selector = router.customRebootButtonSelector.takeIf { it.isNotBlank() },
+                                        semanticAction = SemanticButtonAction.REBOOT,
+                                        customWv = webViewRef
+                                    )
+                                    toastMessage = msg
+                                }
+                            },
+                            label = { Text("ضغط Reboot", fontSize = 11.sp) },
+                            icon = { Icon(Icons.Default.PowerSettingsNew, contentDescription = null, modifier = Modifier.size(14.dp), tint = Color(0xFFFF453A)) }
+                        )
+
+                        // زر الأزرار المكتشفة
+                        if (discoveredButtons.isNotEmpty()) {
+                            SuggestionChip(
+                                onClick = { showButtonsListDialog = true },
+                                label = { Text("الأزرار (${discoveredButtons.size})", fontSize = 11.sp) }
+                            )
+                        }
+                    }
+
+                    // Toast message
+                    toastMessage?.let { msg ->
+                        Row(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .background(Color(0xFF2C2C2E))
+                                .padding(horizontal = 12.dp, vertical = 6.dp),
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.SpaceBetween
+                        ) {
+                            Text(msg, color = Color(0xFFFFD60A), fontSize = 11.sp)
+                            IconButton(onClick = { toastMessage = null }, modifier = Modifier.size(20.dp)) {
+                                Icon(Icons.Default.Close, contentDescription = null, tint = Color.Gray, modifier = Modifier.size(14.dp))
+                            }
+                        }
+                    }
+                }
+            }
+        ) { padding ->
+            Box(
+                modifier = Modifier
+                    .fillMaxSize()
+                    .padding(padding)
+                    .background(Color.Black)
+            ) {
+                AndroidView(
+                    modifier = Modifier.fillMaxSize(),
+                    factory = { ctx ->
+                        WebView(ctx).apply {
+                            settings.javaScriptEnabled = true
+                            settings.domStorageEnabled = true
+                            settings.useWideViewPort = true
+                            settings.loadWithOverviewMode = true
+                            settings.userAgentString = "Mozilla/5.0 (Linux; Android 13; Mobile) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Mobile Safari/537.36"
+
+                            val bridge = WebUIPickerBridge { info ->
+                                android.os.Handler(android.os.Looper.getMainLooper()).post {
+                                    pickedElement = info
+                                    showAssignmentDialog = true
+                                }
+                            }
+                            addJavascriptInterface(bridge, "AndroidPicker")
+
+                            webChromeClient = object : WebChromeClient() {
+                                override fun onJsAlert(view: WebView?, url: String?, message: String?, result: android.webkit.JsResult?): Boolean {
+                                    result?.confirm()
+                                    return true
+                                }
+                                override fun onJsConfirm(view: WebView?, url: String?, message: String?, result: android.webkit.JsResult?): Boolean {
+                                    result?.confirm()
+                                    return true
+                                }
+                            }
+
+                            webViewClient = object : WebViewClient() {
+                                override fun onPageFinished(view: WebView?, url: String?) {
+                                    super.onPageFinished(view, url)
+                                    isLoading = false
+                                    canGoBack = view?.canGoBack() ?: false
+                                    canGoForward = view?.canGoForward() ?: false
+                                    pageTitle = view?.title ?: router.name
+                                    currentURL = url ?: ""
+                                    addressInput = currentURL
+
+                                    if (isPickerActive) {
+                                        injectPickerScript(view)
+                                    }
+                                }
+
+                                override fun onPageStarted(view: WebView?, url: String?, favicon: android.graphics.Bitmap?) {
+                                    super.onPageStarted(view, url, favicon)
+                                    isLoading = true
+                                }
+                            }
+
+                            webViewRef = this
+                            loadUrl(currentURL)
+                        }
+                    },
+                    update = { wv ->
+                        webViewRef = wv
+                        if (isPickerActive) {
+                            injectPickerScript(wv)
+                        } else {
+                            removePickerScript(wv)
+                        }
+                    }
+                )
+
+                if (isLoading) {
+                    CircularProgressIndicator(
+                        modifier = Modifier.align(Alignment.Center),
+                        color = Color(0xFF0A84FF)
+                    )
+                }
+            }
+        }
+    }
+
+    // Buttons List Dialog
+    if (showButtonsListDialog) {
+        AlertDialog(
+            onDismissRequest = { showButtonsListDialog = false },
+            title = { Text("الأزرار المكتشفة في الصفحة (${discoveredButtons.size})", fontWeight = FontWeight.Bold) },
+            text = {
+                LazyColumn(
+                    modifier = Modifier.fillMaxWidth().heightIn(max = 350.dp),
+                    verticalArrangement = Arrangement.spacedBy(6.dp)
+                ) {
+                    items(discoveredButtons) { btn ->
+                        Card(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .clickable {
+                                    showButtonsListDialog = false
+                                    scope.launch {
+                                        toastMessage = "جارِ النقر على: ${btn.displayLabel}..."
+                                        val (ok, msg) = webUI.pressButton(selector = btn.selector, customWv = webViewRef)
+                                        toastMessage = msg
+                                    }
+                                },
+                            colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant),
+                            shape = RoundedCornerShape(8.dp)
+                        ) {
+                            Row(
+                                modifier = Modifier.fillMaxWidth().padding(10.dp),
+                                horizontalArrangement = Arrangement.SpaceBetween,
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                Column(modifier = Modifier.weight(1f)) {
+                                    Text(btn.displayLabel, fontWeight = FontWeight.SemiBold, fontSize = 13.sp)
+                                    Text(btn.selector, fontSize = 10.sp, color = Color.Gray, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                                }
+                                Icon(Icons.Default.TouchApp, contentDescription = null, tint = Color(0xFF0A84FF))
+                            }
+                        }
+                    }
+                }
+            },
+            confirmButton = {
+                TextButton(onClick = { showButtonsListDialog = false }) { Text("إغلاق") }
+            }
+        )
+    }
+
+    // Assignment Dialog
+    if (showAssignmentDialog && pickedElement != null) {
+        val info = pickedElement!!
+        ElementAssignmentDialog(
+            info = info,
+            onDismiss = { showAssignmentDialog = false },
+            onAssign = { action ->
+                showAssignmentDialog = false
+                isPickerActive = false
+                removePickerScript(webViewRef)
+
+                var updated = router
+                when (action) {
+                    ElementAssignmentAction.USAGE_COUNTER -> {
+                        val textUp = info.text.uppercase()
+                        val detectedUnit = when {
+                            textUp.contains("GB") || textUp.contains("جيجا") -> "GB"
+                            textUp.contains("MB") || textUp.contains("ميجا") -> "MB"
+                            textUp.contains("KB") || textUp.contains("كيلو") -> "KB"
+                            textUp.contains("BYTE") || textUp.contains("بايت") -> "Bytes"
+                            else -> "Auto"
+                        }
+                        updated = router.copy(
+                            customUsageSelector = info.selector,
+                            customUsageUnit = detectedUnit
+                        )
+                        toastMessage = "تم تعيين عداد استهلاك الباقة بنجاح: ${info.selector}"
+                    }
+                    ElementAssignmentAction.DEVICES_TABLE -> {
+                        updated = router.copy(customDeviceTableSelector = info.selector)
+                        toastMessage = "تم تعيين جدول الأجهزة المتصلة بنجاح: ${info.selector}"
+                    }
+                    ElementAssignmentAction.REBOOT_BUTTON -> {
+                        updated = router.copy(customRebootButtonSelector = info.selector)
+                        toastMessage = "تم تعيين زر إعادة التشغيل بنجاح: ${info.selector}"
+                    }
+                    ElementAssignmentAction.USERNAME_INPUT -> {
+                        updated = router.copy(customUsernameSelector = info.selector)
+                        toastMessage = "تم تعيين حقل اسم المستخدم بنجاح: ${info.selector}"
+                    }
+                    ElementAssignmentAction.PASSWORD_INPUT -> {
+                        updated = router.copy(customPasswordSelector = info.selector)
+                        toastMessage = "تم تعيين حقل كلمة المرور بنجاح: ${info.selector}"
+                    }
+                    ElementAssignmentAction.LOGIN_BUTTON -> {
+                        updated = router.copy(customLoginButtonSelector = info.selector)
+                        toastMessage = "تم تعيين زر تسجيل الدخول بنجاح: ${info.selector}"
+                    }
+                    ElementAssignmentAction.COPY_SELECTOR -> {
+                        val clipboard = context.getSystemService(Context.CLIPBOARD_SERVICE) as android.content.ClipboardManager
+                        val clip = android.content.ClipData.newPlainText("selector", info.selector)
+                        clipboard.setPrimaryClip(clip)
+                        toastMessage = "تم نسخ المحدد للحافظة"
+                    }
+                }
+                if (action != ElementAssignmentAction.COPY_SELECTOR) {
+                    onRouterUpdated(updated)
+                }
+            }
+        )
+    }
+}
+
+@Composable
+fun ElementAssignmentDialog(
+    info: PickedElementInfo,
+    onDismiss: () -> Unit,
+    onAssign: (ElementAssignmentAction) -> Unit
+) {
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = {
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Icon(Icons.Default.Adjust, contentDescription = null, tint = Color(0xFF30D158))
+                Spacer(Modifier.width(8.dp))
+                Text("تعيين العنصر الملتقط بدون كود", fontWeight = FontWeight.Bold, fontSize = 16.sp)
+            }
+        },
+        text = {
+            LazyColumn(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .heightIn(max = 480.dp),
+                verticalArrangement = Arrangement.spacedBy(10.dp)
+            ) {
+                // بطاقة معاينة العنصر الملتقط
+                item {
+                    Card(
+                        modifier = Modifier.fillMaxWidth(),
+                        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant),
+                        shape = RoundedCornerShape(10.dp)
+                    ) {
+                        Column(modifier = Modifier.padding(12.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                            Row(
+                                modifier = Modifier.fillMaxWidth(),
+                                horizontalArrangement = Arrangement.SpaceBetween,
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                Text(
+                                    "<${info.tag.uppercase()}>",
+                                    fontSize = 11.sp,
+                                    fontWeight = FontWeight.Bold,
+                                    color = Color(0xFF0A84FF),
+                                    modifier = Modifier
+                                        .background(Color(0xFF0A84FF).copy(alpha = 0.2f), RoundedCornerShape(4.dp))
+                                        .padding(horizontal = 6.dp, vertical = 2.dp)
+                                )
+
+                                if (info.suggestedType != SuggestedElementType.UNKNOWN) {
+                                    Text(
+                                        "مقترح: ${info.suggestedType.title}",
+                                        fontSize = 10.sp,
+                                        fontWeight = FontWeight.Bold,
+                                        color = Color(0xFFFFD60A),
+                                        modifier = Modifier
+                                            .background(Color(0xFFFFD60A).copy(alpha = 0.25f), RoundedCornerShape(4.dp))
+                                            .padding(horizontal = 6.dp, vertical = 2.dp)
+                                    )
+                                }
+                            }
+
+                            if (info.text.isNotBlank()) {
+                                Text("المحتوى: \"${info.text}\"", fontSize = 12.sp, color = Color.White, maxLines = 3, overflow = TextOverflow.Ellipsis)
+                            } else if (info.value.isNotBlank()) {
+                                Text("القيمة: \"${info.value}\"", fontSize = 12.sp, color = Color.White, maxLines = 2, overflow = TextOverflow.Ellipsis)
+                            }
+
+                            Text(
+                                info.selector,
+                                fontSize = 10.sp,
+                                color = Color.Gray,
+                                fontFamily = androidx.compose.ui.text.font.FontFamily.Monospace,
+                                maxLines = 2,
+                                overflow = TextOverflow.Ellipsis
+                            )
+                        }
+                    }
+                }
+
+                item {
+                    Text("اختر كيف ترغب في تعيين هذا العنصر في راوترك:", fontSize = 12.sp, color = Color.Gray, fontWeight = FontWeight.Bold)
+                }
+
+                // 1. عداد استهلاك الباقة
+                item {
+                    AssignmentOptionCard(
+                        title = "عداد استهلاك الباقة",
+                        subtitle = "لقراءة الرصيد المستهلك ومزامنته مع التطبيق والودجت",
+                        icon = Icons.Default.PieChart,
+                        color = Color(0xFF0A84FF),
+                        isRecommended = info.suggestedType == SuggestedElementType.USAGE_COUNTER,
+                        onClick = { onAssign(ElementAssignmentAction.USAGE_COUNTER) }
+                    )
+                }
+
+                // 2. جدول الأجهزة المتصلة
+                item {
+                    AssignmentOptionCard(
+                        title = "جدول الأجهزة المتصلة",
+                        subtitle = "لاستخراج قائمة الهواتف والأجهزة المتصلة براوترك وحظرها",
+                        icon = Icons.Default.Devices,
+                        color = Color(0xFF30D158),
+                        isRecommended = info.suggestedType == SuggestedElementType.DEVICES_TABLE,
+                        onClick = { onAssign(ElementAssignmentAction.DEVICES_TABLE) }
+                    )
+                }
+
+                // 3. زر إعادة التشغيل
+                item {
+                    AssignmentOptionCard(
+                        title = "زر إعادة التشغيل (Reboot)",
+                        subtitle = "للضغط عليه تلقائياً عند طلب إعادة تشغيل الراوتر",
+                        icon = Icons.Default.PowerSettingsNew,
+                        color = Color(0xFFFF453A),
+                        isRecommended = info.suggestedType == SuggestedElementType.REBOOT_BUTTON,
+                        onClick = { onAssign(ElementAssignmentAction.REBOOT_BUTTON) }
+                    )
+                }
+
+                // 4. حقل اسم المستخدم
+                item {
+                    AssignmentOptionCard(
+                        title = "حقل اسم المستخدم (Login User)",
+                        subtitle = "لحقن اسم المستخدم تلقائياً عند تسجيل الدخول",
+                        icon = Icons.Default.Person,
+                        color = Color(0xFFFF9F0A),
+                        isRecommended = info.suggestedType == SuggestedElementType.USERNAME_INPUT,
+                        onClick = { onAssign(ElementAssignmentAction.USERNAME_INPUT) }
+                    )
+                }
+
+                // 5. حقل كلمة المرور
+                item {
+                    AssignmentOptionCard(
+                        title = "حقل كلمة المرور (Login Password)",
+                        subtitle = "لحقن كلمة المرور تلقائياً في صفحة دخول الراوتر",
+                        icon = Icons.Default.Lock,
+                        color = Color(0xFFBF5AF2),
+                        isRecommended = info.suggestedType == SuggestedElementType.PASSWORD_INPUT,
+                        onClick = { onAssign(ElementAssignmentAction.PASSWORD_INPUT) }
+                    )
+                }
+
+                // 6. زر تسجيل الدخول
+                item {
+                    AssignmentOptionCard(
+                        title = "زر تسجيل الدخول (Login Submit)",
+                        subtitle = "للنقر عليه تلقائياً بعد ملء بيانات الدخول",
+                        icon = Icons.Default.Key,
+                        color = Color(0xFFFFD60A),
+                        isRecommended = info.suggestedType == SuggestedElementType.LOGIN_BUTTON,
+                        onClick = { onAssign(ElementAssignmentAction.LOGIN_BUTTON) }
+                    )
+                }
+
+                // 7. نسخ المحدد
+                item {
+                    OutlinedButton(
+                        onClick = { onAssign(ElementAssignmentAction.COPY_SELECTOR) },
+                        modifier = Modifier.fillMaxWidth()
+                    ) {
+                        Icon(Icons.Default.ContentCopy, contentDescription = null, modifier = Modifier.size(16.dp))
+                        Spacer(Modifier.width(8.dp))
+                        Text("نسخ المحدد فقط للحافظة", fontSize = 12.sp)
+                    }
+                }
+            }
+        },
+        confirmButton = {
+            TextButton(onClick = onDismiss) {
+                Text("إلغاء")
+            }
+        }
+    )
+}
+
+@Composable
+fun AssignmentOptionCard(
+    title: String,
+    subtitle: String,
+    icon: androidx.compose.ui.graphics.vector.ImageVector,
+    color: Color,
+    isRecommended: Boolean,
+    onClick: () -> Unit
+) {
+    Card(
+        modifier = Modifier
+            .fillMaxWidth()
+            .clickable(onClick = onClick),
+        shape = RoundedCornerShape(10.dp),
+        colors = CardDefaults.cardColors(
+            containerColor = if (isRecommended) color.copy(alpha = 0.15f) else MaterialTheme.colorScheme.surfaceVariant
+        )
+    ) {
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(12.dp),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(12.dp)
+        ) {
+            Icon(icon, contentDescription = null, tint = color, modifier = Modifier.size(24.dp))
+            Column(modifier = Modifier.weight(1f)) {
+                Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                    Text(title, fontWeight = FontWeight.Bold, fontSize = 13.sp, color = Color.White)
+                    if (isRecommended) {
+                        Text(
+                            "مقترح",
+                            fontSize = 9.sp,
+                            fontWeight = FontWeight.Bold,
+                            color = Color(0xFFFFD60A),
+                            modifier = Modifier
+                                .background(Color(0xFFFFD60A).copy(alpha = 0.25f), RoundedCornerShape(3.dp))
+                                .padding(horizontal = 4.dp, vertical = 1.dp)
+                        )
+                    }
+                }
+                Text(subtitle, fontSize = 11.sp, color = Color.Gray)
+            }
+            Icon(Icons.Default.ArrowBackIosNew, contentDescription = null, tint = Color.Gray, modifier = Modifier.size(12.dp))
+        }
+    }
+}
+
+const val START_PICKER_JS = """
+(function() {
+    if (window.__dslPickerActive) return;
+    window.__dslPickerActive = true;
+
+    var box = document.getElementById('__dsl_picker_box');
+    if (!box) {
+        box = document.createElement('div');
+        box.id = '__dsl_picker_box';
+        box.style.position = 'fixed';
+        box.style.pointerEvents = 'none';
+        box.style.zIndex = '2147483647';
+        box.style.border = '2px dashed #00E676';
+        box.style.backgroundColor = 'rgba(0, 230, 118, 0.22)';
+        box.style.borderRadius = '5px';
+        box.style.boxShadow = '0 0 14px rgba(0, 230, 118, 0.65)';
+        box.style.transition = 'all 0.08s ease-out';
+        box.style.display = 'none';
+
+        var badge = document.createElement('div');
+        badge.id = '__dsl_picker_badge';
+        badge.style.position = 'absolute';
+        badge.style.top = '-28px';
+        badge.style.left = '0';
+        badge.style.backgroundColor = '#00E676';
+        badge.style.color = '#000000';
+        badge.style.fontSize = '12px';
+        badge.style.fontWeight = 'bold';
+        badge.style.padding = '2px 8px';
+        badge.style.borderRadius = '4px';
+        badge.style.whiteSpace = 'nowrap';
+        badge.style.fontFamily = 'monospace';
+        badge.style.boxShadow = '0 2px 6px rgba(0,0,0,0.4)';
+        box.appendChild(badge);
+
+        document.documentElement.appendChild(box);
+    }
+
+    var hoveredEl = null;
+
+    function getUniqueSelector(el) {
+        if (!el || el === document.body || el === document.documentElement) return '';
+        if (el.id && el.id.trim() !== '') {
+            try {
+                var cleanId = CSS.escape ? CSS.escape(el.id) : el.id;
+                if (document.querySelectorAll('#' + cleanId).length === 1) {
+                    return '#' + cleanId;
+                }
+            } catch(e) {}
+        }
+        var name = el.getAttribute('name');
+        if (name) {
+            var sel = el.tagName.toLowerCase() + '[name="' + name + '"]';
+            try {
+                if (document.querySelectorAll(sel).length === 1) return sel;
+            } catch(e) {}
+        }
+        var path = [];
+        var curr = el;
+        while (curr && curr.nodeType === Node.ELEMENT_NODE && curr !== document.documentElement) {
+            var tag = curr.tagName.toLowerCase();
+            if (curr.id && curr.id.trim() !== '') {
+                try {
+                    var cleanId = CSS.escape ? CSS.escape(curr.id) : curr.id;
+                    if (document.querySelectorAll('#' + cleanId).length === 1) {
+                        path.unshift('#' + cleanId);
+                        break;
+                    }
+                } catch(e) {}
+            }
+            var parent = curr.parentElement;
+            if (parent) {
+                var siblings = Array.from(parent.children).filter(function(e) { return e.tagName.toLowerCase() === tag; });
+                if (siblings.length > 1) {
+                    var index = siblings.indexOf(curr) + 1;
+                    path.unshift(tag + ':nth-of-type(' + index + ')');
+                } else {
+                    path.unshift(tag);
+                }
+            } else {
+                path.unshift(tag);
+            }
+            curr = curr.parentElement;
+            if (path.length >= 4) break;
+        }
+        return path.join(' > ');
+    }
+
+    function onPointerMove(e) {
+        var x = e.clientX, y = e.clientY;
+        var el = document.elementFromPoint(x, y);
+        if (!el || el === box || box.contains(el)) return;
+        hoveredEl = el;
+
+        var rect = el.getBoundingClientRect();
+        box.style.left = rect.left + 'px';
+        box.style.top = rect.top + 'px';
+        box.style.width = Math.max(rect.width, 14) + 'px';
+        box.style.height = Math.max(rect.height, 14) + 'px';
+        box.style.display = 'block';
+
+        var badge = document.getElementById('__dsl_picker_badge');
+        if (badge) {
+            var tag = el.tagName.toLowerCase();
+            var id = el.id ? '#' + el.id : '';
+            var txt = (el.innerText || el.textContent || el.value || '').trim();
+            if (txt.length > 18) txt = txt.substring(0, 18) + '...';
+            badge.innerText = tag + id + (txt ? ' "' + txt + '"' : '');
+            if (rect.top < 34) {
+                badge.style.top = (rect.height + 4) + 'px';
+            } else {
+                badge.style.top = '-28px';
+            }
+        }
+    }
+
+    function onClick(e) {
+        e.preventDefault();
+        e.stopPropagation();
+        e.stopImmediatePropagation();
+
+        var el = hoveredEl || e.target;
+        if (!el || el === box || box.contains(el)) return false;
+
+        var selector = getUniqueSelector(el);
+        var tag = el.tagName ? el.tagName.toLowerCase() : '';
+        var text = (el.innerText || el.textContent || '').trim().replace(/\\s+/g, ' ');
+        var value = el.value || '';
+
+        var payload = {
+            selector: selector,
+            tag: tag,
+            text: text.slice(0, 200),
+            value: value.slice(0, 100),
+            url: window.location.href
+        };
+
+        if (window.AndroidPicker && window.AndroidPicker.onElementPicked) {
+            window.AndroidPicker.onElementPicked(JSON.stringify(payload));
+        }
+        return false;
+    }
+
+    window.__dslPickerMoveHandler = onPointerMove;
+    window.__dslPickerClickHandler = onClick;
+
+    document.addEventListener('pointermove', onPointerMove, true);
+    document.addEventListener('touchmove', function(e) {
+        if (e.touches && e.touches[0]) {
+            onPointerMove({ clientX: e.touches[0].clientX, clientY: e.touches[0].clientY });
+        }
+    }, { capture: true, passive: true });
+
+    document.addEventListener('click', onClick, true);
+    document.addEventListener('touchend', function(e) {
+        if (e.changedTouches && e.changedTouches[0]) {
+            var t = e.changedTouches[0];
+            var el = document.elementFromPoint(t.clientX, t.clientY);
+            if (el) {
+                hoveredEl = el;
+                onClick(e);
+            }
+        }
+    }, true);
+})();
+"""
+
+const val STOP_PICKER_JS = """
+(function() {
+    window.__dslPickerActive = false;
+    var box = document.getElementById('__dsl_picker_box');
+    if (box && box.parentElement) {
+        box.parentElement.removeChild(box);
+    }
+    if (window.__dslPickerMoveHandler) {
+        document.removeEventListener('pointermove', window.__dslPickerMoveHandler, true);
+    }
+    if (window.__dslPickerClickHandler) {
+        document.removeEventListener('click', window.__dslPickerClickHandler, true);
+    }
+})();
+"""

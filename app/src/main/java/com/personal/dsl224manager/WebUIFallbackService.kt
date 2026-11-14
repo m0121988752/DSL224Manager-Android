@@ -64,7 +64,7 @@ class WebUIFallbackService(private val context: Context) {
         }
 
         // محاولة تسجيل الدخول التلقائي إذا كان النموذج متاحاً
-        attemptAutoLogin(profile.username, profile.password, wv)
+        attemptAutoLogin(profile.username, profile.password, profile, wv)
 
         // كشط محتويات الصفحة مع مراعاة إعدادات No-Code المخصصة
         scrapeCurrentPage(profile, wv)
@@ -87,10 +87,13 @@ class WebUIFallbackService(private val context: Context) {
         }
     } ?: false
 
-    suspend fun attemptAutoLogin(username: String, pass: String, customWv: WebView? = null): Boolean = withContext(Dispatchers.Main) {
+    suspend fun attemptAutoLogin(username: String, pass: String, profile: RouterProfile? = null, customWv: WebView? = null): Boolean = withContext(Dispatchers.Main) {
         val wv = customWv ?: getOrCreateWebView()
         val escapedUser = username.replace("\\", "\\\\").replace("\"", "\\\"")
         val escapedPass = pass.replace("\\", "\\\\").replace("\"", "\\\"")
+        val customUser = (profile?.customUsernameSelector ?: "").replace("\\", "\\\\").replace("\"", "\\\"")
+        val customPass = (profile?.customPasswordSelector ?: "").replace("\\", "\\\\").replace("\"", "\\\"")
+        val customLogin = (profile?.customLoginButtonSelector ?: "").replace("\\", "\\\\").replace("\"", "\\\"")
 
         val js = """
         (function() {
@@ -101,6 +104,8 @@ class WebUIFallbackService(private val context: Context) {
                 'input[id*="user" i]',
                 'input[type="text"]'
             ];
+            if ("$customUser".length > 0) userSelectors.unshift("$customUser");
+
             var passSelectors = [
                 '#f_password',
                 'input[name="f_password"]',
@@ -108,6 +113,7 @@ class WebUIFallbackService(private val context: Context) {
                 'input[name*="pass" i]',
                 'input[id*="pass" i]'
             ];
+            if ("$customPass".length > 0) passSelectors.unshift("$customPass");
 
             var userEl = null;
             for (var i = 0; i < userSelectors.length; i++) {
@@ -145,6 +151,7 @@ class WebUIFallbackService(private val context: Context) {
                 'input[value="OK"]',
                 'input[value*="login" i]'
             ];
+            if ("$customLogin".length > 0) submitSelectors.unshift("$customLogin");
 
             var submitEl = null;
             for (var k = 0; k < submitSelectors.length; k++) {
