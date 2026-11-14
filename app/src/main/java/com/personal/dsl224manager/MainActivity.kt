@@ -1717,10 +1717,22 @@ fun RouterWebUIDialog(
         val info = pickedElement!!
         ElementAssignmentDialog(
             info = info,
-            onDismiss = { showAssignmentDialog = false },
+            onDismiss = {
+                showAssignmentDialog = false
+                isPickerActive = false
+                pickedElement = null
+                removePickerScript(webViewRef)
+                toastMessage = "تم إيقاف وضع الالتقاط"
+            },
+            onContinuePicking = {
+                showAssignmentDialog = false
+                pickedElement = null
+                toastMessage = "وضع الالتقاط مفعّل: المس عنصراً آخر في الصفحة"
+            },
             onAssign = { action ->
                 showAssignmentDialog = false
                 isPickerActive = false
+                pickedElement = null
                 removePickerScript(webViewRef)
 
                 var updated = router
@@ -1779,6 +1791,7 @@ fun RouterWebUIDialog(
 fun ElementAssignmentDialog(
     info: PickedElementInfo,
     onDismiss: () -> Unit,
+    onContinuePicking: () -> Unit,
     onAssign: (ElementAssignmentAction) -> Unit
 ) {
     AlertDialog(
@@ -1938,11 +1951,44 @@ fun ElementAssignmentDialog(
                         Text("نسخ المحدد فقط للحافظة", fontSize = 12.sp)
                     }
                 }
+
+                // أزرار سريعة للتحكم بوضع الالتقاط
+                item {
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.spacedBy(8.dp)
+                    ) {
+                        OutlinedButton(
+                            onClick = onDismiss,
+                            modifier = Modifier.weight(1f),
+                            colors = ButtonDefaults.outlinedButtonColors(contentColor = Color(0xFFFF453A))
+                        ) {
+                            Icon(Icons.Default.Close, contentDescription = null, modifier = Modifier.size(14.dp))
+                            Spacer(Modifier.width(4.dp))
+                            Text("إيقاف الالتقاط", fontSize = 11.sp)
+                        }
+
+                        Button(
+                            onClick = onContinuePicking,
+                            modifier = Modifier.weight(1f),
+                            colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF30D158))
+                        ) {
+                            Icon(Icons.Default.Adjust, contentDescription = null, tint = Color.Black, modifier = Modifier.size(14.dp))
+                            Spacer(Modifier.width(4.dp))
+                            Text("متابعة الالتقاط", fontSize = 11.sp, color = Color.Black, fontWeight = FontWeight.Bold)
+                        }
+                    }
+                }
+            }
+        },
+        dismissButton = {
+            TextButton(onClick = onContinuePicking) {
+                Text("متابعة الالتقاط", color = Color(0xFF30D158))
             }
         },
         confirmButton = {
             TextButton(onClick = onDismiss) {
-                Text("إلغاء")
+                Text("إلغاء وإيقاف الالتقاط", color = Color(0xFFFF453A))
             }
         }
     )
@@ -2085,6 +2131,7 @@ const val START_PICKER_JS = """
     }
 
     function onPointerMove(e) {
+        if (!window.__dslPickerActive) return;
         var x = e.clientX, y = e.clientY;
         var el = document.elementFromPoint(x, y);
         if (!el || el === box || box.contains(el)) return;
@@ -2112,7 +2159,15 @@ const val START_PICKER_JS = """
         }
     }
 
+    function onTouchMove(e) {
+        if (!window.__dslPickerActive) return;
+        if (e.touches && e.touches[0]) {
+            onPointerMove({ clientX: e.touches[0].clientX, clientY: e.touches[0].clientY });
+        }
+    }
+
     function onClick(e) {
+        if (!window.__dslPickerActive) return true;
         e.preventDefault();
         e.stopPropagation();
         e.stopImmediatePropagation();
@@ -2139,18 +2194,8 @@ const val START_PICKER_JS = """
         return false;
     }
 
-    window.__dslPickerMoveHandler = onPointerMove;
-    window.__dslPickerClickHandler = onClick;
-
-    document.addEventListener('pointermove', onPointerMove, true);
-    document.addEventListener('touchmove', function(e) {
-        if (e.touches && e.touches[0]) {
-            onPointerMove({ clientX: e.touches[0].clientX, clientY: e.touches[0].clientY });
-        }
-    }, { capture: true, passive: true });
-
-    document.addEventListener('click', onClick, true);
-    document.addEventListener('touchend', function(e) {
+    function onTouchEnd(e) {
+        if (!window.__dslPickerActive) return;
         if (e.changedTouches && e.changedTouches[0]) {
             var t = e.changedTouches[0];
             var el = document.elementFromPoint(t.clientX, t.clientY);
@@ -2159,7 +2204,17 @@ const val START_PICKER_JS = """
                 onClick(e);
             }
         }
-    }, true);
+    }
+
+    window.__dslPickerPointerMove = onPointerMove;
+    window.__dslPickerTouchMove = onTouchMove;
+    window.__dslPickerClick = onClick;
+    window.__dslPickerTouchEnd = onTouchEnd;
+
+    document.addEventListener('pointermove', onPointerMove, true);
+    document.addEventListener('touchmove', onTouchMove, { capture: true, passive: true });
+    document.addEventListener('click', onClick, true);
+    document.addEventListener('touchend', onTouchEnd, true);
 })();
 """
 
@@ -2167,14 +2222,28 @@ const val STOP_PICKER_JS = """
 (function() {
     window.__dslPickerActive = false;
     var box = document.getElementById('__dsl_picker_box');
-    if (box && box.parentElement) {
-        box.parentElement.removeChild(box);
+    if (box) {
+        box.style.display = 'none';
+        if (box.parentElement) {
+            box.parentElement.removeChild(box);
+        }
     }
-    if (window.__dslPickerMoveHandler) {
-        document.removeEventListener('pointermove', window.__dslPickerMoveHandler, true);
+    if (window.__dslPickerPointerMove) {
+        document.removeEventListener('pointermove', window.__dslPickerPointerMove, true);
+        window.__dslPickerPointerMove = null;
     }
-    if (window.__dslPickerClickHandler) {
-        document.removeEventListener('click', window.__dslPickerClickHandler, true);
+    if (window.__dslPickerTouchMove) {
+        document.removeEventListener('touchmove', window.__dslPickerTouchMove, { capture: true, passive: true });
+        document.removeEventListener('touchmove', window.__dslPickerTouchMove, true);
+        window.__dslPickerTouchMove = null;
+    }
+    if (window.__dslPickerClick) {
+        document.removeEventListener('click', window.__dslPickerClick, true);
+        window.__dslPickerClick = null;
+    }
+    if (window.__dslPickerTouchEnd) {
+        document.removeEventListener('touchend', window.__dslPickerTouchEnd, true);
+        window.__dslPickerTouchEnd = null;
     }
 })();
 """
