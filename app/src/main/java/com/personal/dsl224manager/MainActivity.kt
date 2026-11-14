@@ -14,6 +14,7 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -105,6 +106,10 @@ fun MainScreen(repo: RouterRepository) {
     // حوار التخصيص المرئي للكشط بدون كود (No-Code Scraper Customization)
     var showNoCodeDialog by remember { mutableStateOf(false) }
 
+    // معالج الإعداد التلقائي وقائمة الأدوات العلوية
+    var showSetupWizardDialog by remember { mutableStateOf(!storage.hasCompletedWizard()) }
+    var showTopMenu by remember { mutableStateOf(false) }
+
     fun log(msg: String) {
         logs = listOf(msg) + logs.take(60)
     }
@@ -143,77 +148,25 @@ fun MainScreen(repo: RouterRepository) {
         topBar = {
             TopAppBar(
                 title = {
-                    Column {
-                        Text(activeRouter.name, fontWeight = FontWeight.Bold, fontSize = 18.sp)
+                    Column(modifier = Modifier.padding(end = 4.dp)) {
+                        Text(
+                            activeRouter.name,
+                            fontWeight = FontWeight.Bold,
+                            fontSize = 17.sp,
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis
+                        )
                         Text(
                             "${activeRouter.routerIP} • ${activeRouter.firmware.displayName.substringBefore(" ")}",
                             fontSize = 11.sp,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis
                         )
                     }
                 },
                 actions = {
-                    // زر فتح متصفح الراوتر والالتقاط البصري المباشر
-                    IconButton(
-                        onClick = {
-                            initialPickerMode = true
-                            showWebUIDialog = true
-                        },
-                        enabled = !isLoading
-                    ) {
-                        Icon(Icons.Default.Adjust, contentDescription = "التقاط عنصر بصري", tint = Color(0xFF30D158))
-                    }
-
-                    // زر التخصيص بدون كود (No-Code Scraper Customizer)
-                    IconButton(
-                        onClick = { showNoCodeDialog = true },
-                        enabled = !isLoading
-                    ) {
-                        Icon(Icons.Default.Tune, contentDescription = "تخصيص الكشط No-Code", tint = Color(0xFF30D158))
-                    }
-
-                    // زر فحص وكشط أزرار الويب
-                    IconButton(
-                        onClick = {
-                            scope.launch {
-                                isLoading = true
-                                log("جاري فحص وكشط واجهة الويب والأزرار المتاحة...")
-                                val res = webUI.autoLoginAndScrape(activeRouter)
-                                lastScrapeResult = res
-                                if (res.success) {
-                                    val updated = repo.applyScrapeResult(activeRouter, res) { log(it) }
-                                    updateActiveRouter(updated)
-                                    showWebUIDialog = true
-                                    log("✅ تم العثور على ${res.buttons.size} زر تفاعلي في الصفحة")
-                                } else {
-                                    log("❌ فشل فحص الويب: ${res.message}")
-                                }
-                                isLoading = false
-                            }
-                        },
-                        enabled = !isLoading
-                    ) {
-                        Icon(Icons.Default.Language, contentDescription = "WebUI", tint = Color(0xFFFF9F0A))
-                    }
-
-                    // زر إعادة تشغيل الراوتر بلمسة واحدة
-                    IconButton(
-                        onClick = {
-                            scope.launch {
-                                log("جاري إرسال أمر إعادة التشغيل (Reboot) للراوتر...")
-                                val (ok, msg) = webUI.pressButton(
-                                    selector = activeRouter.customRebootButtonSelector.takeIf { it.isNotBlank() },
-                                    semanticAction = SemanticButtonAction.REBOOT
-                                )
-                                log(if (ok) "✅ $msg" else "❌ $msg")
-                            }
-                        },
-                        enabled = !isLoading
-                    ) {
-                        Icon(Icons.Default.PowerSettingsNew, contentDescription = "إعادة تشغيل", tint = MaterialTheme.colorScheme.error)
-                    }
-
-                    // زر التحديث اللحظي
+                    // 1. زر التحديث اللحظي الرئيسي
                     IconButton(
                         onClick = { refreshActiveRouter() },
                         enabled = !isLoading
@@ -222,6 +175,68 @@ fun MainScreen(repo: RouterRepository) {
                             CircularProgressIndicator(modifier = Modifier.size(20.dp), strokeWidth = 2.dp, color = MaterialTheme.colorScheme.primary)
                         } else {
                             Icon(Icons.Default.Refresh, contentDescription = "تحديث", tint = MaterialTheme.colorScheme.primary)
+                        }
+                    }
+
+                    // 2. قائمة أدوات الراوتر المنسدلة (تمنع تزاحم وتداخل الأزرار مع الاسم نهائياً)
+                    Box {
+                        IconButton(onClick = { showTopMenu = true }) {
+                            Icon(Icons.Default.MoreVert, contentDescription = "أدوات الراوتر", tint = Color.White)
+                        }
+
+                        DropdownMenu(
+                            expanded = showTopMenu,
+                            onDismissRequest = { showTopMenu = false }
+                        ) {
+                            DropdownMenuItem(
+                                text = { Text("معالج الإعداد الذكي 🪄", fontWeight = FontWeight.Bold) },
+                                onClick = {
+                                    showTopMenu = false
+                                    showSetupWizardDialog = true
+                                },
+                                leadingIcon = { Icon(Icons.Default.AutoAwesome, contentDescription = null, tint = Color(0xFF30D158)) }
+                            )
+                            DropdownMenuItem(
+                                text = { Text("متصفح الراوتر والأزرار 🌐") },
+                                onClick = {
+                                    showTopMenu = false
+                                    showWebUIDialog = true
+                                },
+                                leadingIcon = { Icon(Icons.Default.Language, contentDescription = null, tint = Color(0xFFFF9F0A)) }
+                            )
+                            DropdownMenuItem(
+                                text = { Text("التقاط عنصر بصري 🎯") },
+                                onClick = {
+                                    showTopMenu = false
+                                    initialPickerMode = true
+                                    showWebUIDialog = true
+                                },
+                                leadingIcon = { Icon(Icons.Default.Adjust, contentDescription = null, tint = Color(0xFF30D158)) }
+                            )
+                            DropdownMenuItem(
+                                text = { Text("تخصيص الكشط No-Code 🎛️") },
+                                onClick = {
+                                    showTopMenu = false
+                                    showNoCodeDialog = true
+                                },
+                                leadingIcon = { Icon(Icons.Default.Tune, contentDescription = null, tint = Color(0xFF0A84FF)) }
+                            )
+                            Divider(modifier = Modifier.padding(vertical = 4.dp))
+                            DropdownMenuItem(
+                                text = { Text("إعادة تشغيل الراوتر (Reboot) ⏻", color = MaterialTheme.colorScheme.error, fontWeight = FontWeight.Bold) },
+                                onClick = {
+                                    showTopMenu = false
+                                    scope.launch {
+                                        log("جاري إرسال أمر إعادة التشغيل (Reboot) للراوتر...")
+                                        val (ok, msg) = webUI.pressButton(
+                                            selector = activeRouter.customRebootButtonSelector.takeIf { it.isNotBlank() },
+                                            semanticAction = SemanticButtonAction.REBOOT
+                                        )
+                                        log(if (ok) "✅ $msg" else "❌ $msg")
+                                    }
+                                },
+                                leadingIcon = { Icon(Icons.Default.PowerSettingsNew, contentDescription = null, tint = MaterialTheme.colorScheme.error) }
+                            )
                         }
                     }
                 },
@@ -283,6 +298,27 @@ fun MainScreen(repo: RouterRepository) {
                     onRenameDevice = { dev ->
                         editingDevice = dev
                         newCustomName = dev.displayName
+                    },
+                    onRefreshDevices = { refreshActiveRouter() },
+                    onOpenWebUI = {
+                        initialPickerMode = false
+                        showWebUIDialog = true
+                    },
+                    onOpenVisualPicker = {
+                        initialPickerMode = true
+                        showWebUIDialog = true
+                    },
+                    onOpenWizard = { showSetupWizardDialog = true },
+                    onOpenNoCode = { showNoCodeDialog = true },
+                    onReboot = {
+                        scope.launch {
+                            log("جاري إرسال أمر إعادة التشغيل (Reboot) للراوتر...")
+                            val (ok, msg) = webUI.pressButton(
+                                selector = activeRouter.customRebootButtonSelector.takeIf { it.isNotBlank() },
+                                semanticAction = SemanticButtonAction.REBOOT
+                            )
+                            log(if (ok) "✅ $msg" else "❌ $msg")
+                        }
                     }
                 )
                 MainTab.ROUTERS -> RoutersTab(
@@ -336,7 +372,8 @@ fun MainScreen(repo: RouterRepository) {
                         initialPickerMode = true
                         showWebUIDialog = true
                     },
-                    onOpenNoCode = { showNoCodeDialog = true }
+                    onOpenNoCode = { showNoCodeDialog = true },
+                    onOpenWizard = { showSetupWizardDialog = true }
                 )
             }
         }
@@ -425,6 +462,24 @@ fun MainScreen(repo: RouterRepository) {
                         log("⚠️ تم فحص الصفحة ولكن لم يتم التقاط رقم بايتات مناسب بالمحدد الحالي")
                     }
                 }
+            }
+        )
+    }
+
+    // حوار معالج الإعداد الذكي السريع لأول مرة (First-Time Setup Wizard)
+    if (showSetupWizardDialog) {
+        SetupWizardDialog(
+            initialRouter = activeRouter,
+            onDismiss = {
+                showSetupWizardDialog = false
+                storage.setWizardCompleted(true)
+            },
+            onComplete = { configuredProfile ->
+                showSetupWizardDialog = false
+                storage.setWizardCompleted(true)
+                updateActiveRouter(configuredProfile)
+                refreshActiveRouter()
+                log("🎉 تم إكمال معالج الإعداد الذكي وتفعيل راوتر (${configuredProfile.name})")
             }
         )
     }
@@ -722,7 +777,13 @@ fun DashboardTab(
     router: RouterProfile,
     isLoading: Boolean,
     onToggleBlock: (NetworkDevice, Boolean) -> Unit,
-    onRenameDevice: (NetworkDevice) -> Unit
+    onRenameDevice: (NetworkDevice) -> Unit,
+    onRefreshDevices: () -> Unit,
+    onOpenWebUI: () -> Unit,
+    onOpenVisualPicker: () -> Unit,
+    onOpenWizard: () -> Unit,
+    onOpenNoCode: () -> Unit,
+    onReboot: () -> Unit
 ) {
     var searchQuery by remember { mutableStateOf("") }
     var filterMode by remember { mutableStateOf(0) } // 0: الكل, 1: متصل, 2: محظور
@@ -751,7 +812,7 @@ fun DashboardTab(
     ) {
         item { Spacer(Modifier.height(4.dp)) }
 
-        // كارت استهلاك الباقة
+        // كارت استهلاك الباقة والسرعات اللحظية
         item {
             Card(
                 modifier = Modifier.fillMaxWidth(),
@@ -787,7 +848,7 @@ fun DashboardTab(
 
                         // نسبة الاستهلاك
                         Text(
-                            "${String.format("%.1f", router.usedPercentage)}%",
+                            "${String.format(java.util.Locale.US, "%.1f", router.usedPercentage)}%",
                             fontWeight = FontWeight.ExtraBold,
                             fontSize = 18.sp,
                             color = if (router.usedPercentage > 85) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.primary
@@ -804,20 +865,28 @@ fun DashboardTab(
                     ) {
                         Column {
                             Text("المستهلك", fontSize = 11.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
-                            Text(
-                                "${String.format("%.2f", router.usedGB)} GB",
-                                fontSize = 26.sp,
-                                fontWeight = FontWeight.Black
-                            )
+                            Row(verticalAlignment = Alignment.Bottom) {
+                                Text(
+                                    String.format(java.util.Locale.US, "%.2f", router.usedGB),
+                                    fontSize = 26.sp,
+                                    fontWeight = FontWeight.Black
+                                )
+                                Spacer(Modifier.width(4.dp))
+                                Text("GB", fontSize = 13.sp, fontWeight = FontWeight.Bold, color = Color.Gray, modifier = Modifier.padding(bottom = 3.dp))
+                            }
                         }
                         Column(horizontalAlignment = Alignment.End) {
                             Text("المتبقي من ${router.totalPlanGB.toInt()} GB", fontSize = 11.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
-                            Text(
-                                "${String.format("%.2f", router.remainingGB)} GB",
-                                fontSize = 18.sp,
-                                fontWeight = FontWeight.Bold,
-                                color = MaterialTheme.colorScheme.secondary
-                            )
+                            Row(verticalAlignment = Alignment.Bottom) {
+                                Text(
+                                    String.format(java.util.Locale.US, "%.2f", router.remainingGB),
+                                    fontSize = 18.sp,
+                                    fontWeight = FontWeight.Bold,
+                                    color = MaterialTheme.colorScheme.secondary
+                                )
+                                Spacer(Modifier.width(3.dp))
+                                Text("GB", fontSize = 11.sp, fontWeight = FontWeight.SemiBold, color = Color.Gray, modifier = Modifier.padding(bottom = 2.dp))
+                            }
                         }
                     }
 
@@ -834,28 +903,108 @@ fun DashboardTab(
                         trackColor = MaterialTheme.colorScheme.surfaceVariant
                     )
 
-                    // السرعات اللحظية
-                    if (router.liveDownloadRateKbps > 0 || router.liveUploadRateKbps > 0) {
-                        Spacer(Modifier.height(14.dp))
-                        Row(
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .background(MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f), RoundedCornerShape(10.dp))
-                                .padding(horizontal = 12.dp, vertical = 8.dp),
-                            horizontalArrangement = Arrangement.SpaceAround
-                        ) {
-                            Row(verticalAlignment = Alignment.CenterVertically) {
-                                Icon(Icons.Default.ArrowDownward, contentDescription = null, tint = MaterialTheme.colorScheme.secondary, modifier = Modifier.size(16.dp))
-                                Spacer(Modifier.width(4.dp))
-                                Text("تحميل: ${String.format("%.1f", router.liveDownloadRateKbps)} KB/s", fontSize = 12.sp, fontWeight = FontWeight.SemiBold)
+                    // السرعات اللحظية للرفع والتحميل (معروضة دائماً وبشكل بارز وأنيق)
+                    Spacer(Modifier.height(14.dp))
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .background(Color(0xFF141416), RoundedCornerShape(12.dp))
+                            .padding(horizontal = 14.dp, vertical = 10.dp),
+                        horizontalArrangement = Arrangement.SpaceAround,
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        // سرعة التحميل
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            Box(
+                                modifier = Modifier
+                                    .size(30.dp)
+                                    .clip(CircleShape)
+                                    .background(Color(0xFF0A84FF).copy(alpha = 0.2f)),
+                                contentAlignment = Alignment.Center
+                            ) {
+                                Icon(Icons.Default.ArrowDownward, contentDescription = null, tint = Color(0xFF0A84FF), modifier = Modifier.size(16.dp))
                             }
-                            Row(verticalAlignment = Alignment.CenterVertically) {
-                                Icon(Icons.Default.ArrowUpward, contentDescription = null, tint = MaterialTheme.colorScheme.tertiary, modifier = Modifier.size(16.dp))
-                                Spacer(Modifier.width(4.dp))
-                                Text("رفع: ${String.format("%.1f", router.liveUploadRateKbps)} KB/s", fontSize = 12.sp, fontWeight = FontWeight.SemiBold)
+                            Spacer(Modifier.width(8.dp))
+                            Column {
+                                Text("التحميل (Download)", fontSize = 10.sp, color = Color.Gray)
+                                val downFormatted = if (router.liveDownloadRateKbps >= 1024.0) {
+                                    String.format(java.util.Locale.US, "%.2f MB/s", router.liveDownloadRateKbps / 1024.0)
+                                } else {
+                                    String.format(java.util.Locale.US, "%.1f KB/s", router.liveDownloadRateKbps)
+                                }
+                                Text(downFormatted, fontSize = 13.sp, fontWeight = FontWeight.Bold, color = Color(0xFF0A84FF))
+                            }
+                        }
+
+                        Box(modifier = Modifier.width(1.dp).height(26.dp).background(Color(0xFF2C2C2E)))
+
+                        // سرعة الرفع
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            Box(
+                                modifier = Modifier
+                                    .size(30.dp)
+                                    .clip(CircleShape)
+                                    .background(Color(0xFF30D158).copy(alpha = 0.2f)),
+                                contentAlignment = Alignment.Center
+                            ) {
+                                Icon(Icons.Default.ArrowUpward, contentDescription = null, tint = Color(0xFF30D158), modifier = Modifier.size(16.dp))
+                            }
+                            Spacer(Modifier.width(8.dp))
+                            Column {
+                                Text("الرفع (Upload)", fontSize = 10.sp, color = Color.Gray)
+                                val upFormatted = if (router.liveUploadRateKbps >= 1024.0) {
+                                    String.format(java.util.Locale.US, "%.2f MB/s", router.liveUploadRateKbps / 1024.0)
+                                } else {
+                                    String.format(java.util.Locale.US, "%.1f KB/s", router.liveUploadRateKbps)
+                                }
+                                Text(upFormatted, fontSize = 13.sp, fontWeight = FontWeight.Bold, color = Color(0xFF30D158))
                             }
                         }
                     }
+                }
+            }
+        }
+
+        // شريط الإجراءات والأدوات السريعة للراوتر
+        item {
+            LazyRow(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.spacedBy(8.dp)
+            ) {
+                item {
+                    SuggestionChip(
+                        onClick = onOpenWebUI,
+                        label = { Text("متصفح الراوتر 🌐", fontSize = 11.sp, fontWeight = FontWeight.SemiBold) },
+                        colors = SuggestionChipDefaults.suggestionChipColors(containerColor = MaterialTheme.colorScheme.surface)
+                    )
+                }
+                item {
+                    SuggestionChip(
+                        onClick = onOpenVisualPicker,
+                        label = { Text("التقاط عنصر 🎯", fontSize = 11.sp, fontWeight = FontWeight.SemiBold) },
+                        colors = SuggestionChipDefaults.suggestionChipColors(containerColor = MaterialTheme.colorScheme.surface)
+                    )
+                }
+                item {
+                    SuggestionChip(
+                        onClick = onOpenWizard,
+                        label = { Text("معالج الإعداد 🪄", fontSize = 11.sp, fontWeight = FontWeight.Bold, color = Color(0xFF30D158)) },
+                        colors = SuggestionChipDefaults.suggestionChipColors(containerColor = Color(0xFF1E3A24))
+                    )
+                }
+                item {
+                    SuggestionChip(
+                        onClick = onOpenNoCode,
+                        label = { Text("تخصيص الكشط 🎛️", fontSize = 11.sp) },
+                        colors = SuggestionChipDefaults.suggestionChipColors(containerColor = MaterialTheme.colorScheme.surface)
+                    )
+                }
+                item {
+                    SuggestionChip(
+                        onClick = onReboot,
+                        label = { Text("إعادة التشغيل ⏻", fontSize = 11.sp, color = MaterialTheme.colorScheme.error) },
+                        colors = SuggestionChipDefaults.suggestionChipColors(containerColor = MaterialTheme.colorScheme.surface)
+                    )
                 }
             }
         }
@@ -920,18 +1069,42 @@ fun DashboardTab(
                 Box(
                     modifier = Modifier
                         .fillMaxWidth()
-                        .padding(vertical = 32.dp),
+                        .padding(vertical = 24.dp),
                     contentAlignment = Alignment.Center
                 ) {
                     Column(horizontalAlignment = Alignment.CenterHorizontally) {
                         Icon(Icons.Default.DevicesOther, contentDescription = null, tint = Color.Gray, modifier = Modifier.size(48.dp))
                         Spacer(Modifier.height(8.dp))
                         Text(
-                            if (router.devices.isEmpty()) "لا توجد أجهزة متصلة مسجلة\nتأكد من كتابة كلمة المرور والضغط على تحديث" else "لا توجد نتائج تطابق البحث",
+                            if (router.devices.isEmpty()) "لم يتم العثور على أجهزة متصلة مسجلة بعد\nتأكد من كتابة كلمة المرور والضغط على تحديث" else "لا توجد نتائج تطابق البحث",
                             color = Color.Gray,
                             fontSize = 13.sp,
                             textAlign = androidx.compose.ui.text.style.TextAlign.Center
                         )
+
+                        if (router.devices.isEmpty()) {
+                            Spacer(Modifier.height(12.dp))
+                            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                                Button(
+                                    onClick = onRefreshDevices,
+                                    colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.primary),
+                                    contentPadding = PaddingValues(horizontal = 12.dp, vertical = 6.dp)
+                                ) {
+                                    Icon(Icons.Default.Refresh, contentDescription = null, modifier = Modifier.size(14.dp))
+                                    Spacer(Modifier.width(4.dp))
+                                    Text("تحديث وقراءة الأجهزة", fontSize = 11.sp, fontWeight = FontWeight.Bold)
+                                }
+
+                                OutlinedButton(
+                                    onClick = onOpenWizard,
+                                    contentPadding = PaddingValues(horizontal = 12.dp, vertical = 6.dp)
+                                ) {
+                                    Icon(Icons.Default.AutoAwesome, contentDescription = null, tint = Color(0xFF30D158), modifier = Modifier.size(14.dp))
+                                    Spacer(Modifier.width(4.dp))
+                                    Text("معالج الإعداد الذكي", fontSize = 11.sp)
+                                }
+                            }
+                        }
                     }
                 }
             }
@@ -1183,7 +1356,8 @@ fun SettingsTab(
     onSave: (RouterProfile) -> Unit,
     onOpenWebUI: () -> Unit,
     onOpenVisualPicker: () -> Unit,
-    onOpenNoCode: () -> Unit
+    onOpenNoCode: () -> Unit,
+    onOpenWizard: () -> Unit = {}
 ) {
     var name by remember(router) { mutableStateOf(router.name) }
     var ip by remember(router) { mutableStateOf(router.routerIP) }
@@ -1412,6 +1586,34 @@ fun SettingsTab(
                         Icon(Icons.Default.Language, contentDescription = null, tint = Color(0xFFFF9F0A))
                         Spacer(Modifier.width(8.dp))
                         Text("فتح متصفح أزرار WebUI", color = Color.White)
+                    }
+                }
+            }
+        }
+
+        // بطاقة تشغيل معالج الإعداد الذكي
+        item {
+            Card(
+                modifier = Modifier.fillMaxWidth(),
+                shape = RoundedCornerShape(16.dp),
+                colors = CardDefaults.cardColors(containerColor = Color(0xFF1E3A24))
+            ) {
+                Column(modifier = Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        Icon(Icons.Default.AutoAwesome, contentDescription = null, tint = Color(0xFF30D158))
+                        Spacer(Modifier.width(8.dp))
+                        Text("معالج الإعداد والتهيئة الذكي (Setup Wizard)", fontWeight = FontWeight.Bold, fontSize = 14.sp, color = Color.White)
+                    }
+                    Text("إعادة تشغيل معالج البحث التلقائي عن الراوتر وتهيئته خطوة بخطوة في ثوانٍ.", fontSize = 12.sp, color = Color(0xFFCCCCCC))
+
+                    Button(
+                        onClick = onOpenWizard,
+                        modifier = Modifier.fillMaxWidth(),
+                        colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF30D158))
+                    ) {
+                        Icon(Icons.Default.PlayArrow, contentDescription = null, tint = Color.Black)
+                        Spacer(Modifier.width(8.dp))
+                        Text("تشغيل معالج الإعداد التلقائي 🪄", color = Color.Black, fontWeight = FontWeight.Bold)
                     }
                 }
             }

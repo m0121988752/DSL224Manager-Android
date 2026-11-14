@@ -152,6 +152,14 @@ class RouterStorage(context: Context) {
         }
     }
 
+    fun hasCompletedWizard(): Boolean {
+        return prefs.getBoolean("has_completed_wizard", false)
+    }
+
+    fun setWizardCompleted(completed: Boolean) {
+        prefs.edit().putBoolean("has_completed_wizard", completed).apply()
+    }
+
     private fun defaultProfiles(): List<RouterProfile> = listOf(
         RouterProfile(
             name = "راوتر D-Link (DSL-224)",
