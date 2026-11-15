@@ -54,13 +54,14 @@ jobs:
       run: |
         TAG_NAME="v1.1.${{ github.run_number }}"
         echo "Publishing GitHub Release $TAG_NAME"
-        gh release create "$TAG_NAME" \
-          dist/app-release.apk \
-          dist/app-debug.apk \
+        cat << 'EOF' > release_notes.md
+        ### ما الجديد في هذا التحديث (What's New):
+        * توقيع رقمي دائم ومعتمد (Release Keystore) ممتد حتى عام 2054
+        * دعم التحديث التلقائي الفوري والتثبيت المباشر دون الحاجة لحذف التطبيق
+        * نافذة ما الجديد (What's New) التفاعلية داخل التطبيق وفحص أحدث الإصدارات
+        * واجهة إعدادات عصرية بنمط Material 3 مع شرائح تحديد سعة الباقة السريعة
+        * تحسين استخراج السرعات الحية والتعامل مع راوترات D-Link و Huawei
+        EOF
+        gh release create "$TAG_NAME" dist/app-release.apk dist/app-debug.apk \
           --title "DSL224Manager Android $TAG_NAME" \
-          --notes "### ما الجديد في هذا التحديث (What's New):
-- توقيع رقمي دائم ومعتمد (Release Keystore) ممتد حتى عام 2054
-- دعم التحديث التلقائي الفوري والتثبيت المباشر دون الحاجة لحذف التطبيق
-- نافذة ما الجديد (What's New) التفاعلية داخل التطبيق وفحص أحدث الإصدارات
-- واجهة إعدادات عصرية بنمط Material 3 مع شرائح تحديد سعة الباقة السريعة
-- تحسين استخراج السرعات الحية والتعامل مع راوترات D-Link و Huawei"
+          --notes-file release_notes.md
