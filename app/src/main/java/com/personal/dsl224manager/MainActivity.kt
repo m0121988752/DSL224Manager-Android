@@ -1369,285 +1369,542 @@ fun SettingsTab(
     var totalPlanGB by remember(router) { mutableStateOf(router.totalPlanGB.toInt().toString()) }
     var enableFallback by remember(router) { mutableStateOf(router.enableWebUIFallback) }
     var showPresetsDialog by remember { mutableStateOf(false) }
+    var saveSuccessMessage by remember { mutableStateOf(false) }
+
+    val commonPlanChips = listOf("140", "200", "250", "300", "400", "600")
 
     LazyColumn(
         modifier = Modifier
             .fillMaxSize()
-            .padding(16.dp),
-        verticalArrangement = Arrangement.spacedBy(14.dp)
+            .padding(horizontal = 16.dp),
+        verticalArrangement = Arrangement.spacedBy(16.dp),
+        contentPadding = PaddingValues(vertical = 16.dp)
     ) {
-        item {
-            Text("إعدادات الراوتر والاتصال", fontWeight = FontWeight.Bold, fontSize = 18.sp)
-        }
-
+        // 1. بطاقة تعريف الراوتر النشط
         item {
             Card(
                 modifier = Modifier.fillMaxWidth(),
-                shape = RoundedCornerShape(16.dp),
-                colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface)
+                shape = RoundedCornerShape(20.dp),
+                colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f)),
+                border = androidx.compose.foundation.BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.4f))
             ) {
-                Column(modifier = Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
-                    OutlinedTextField(
-                        value = name,
-                        onValueChange = { name = it },
-                        label = { Text("اسم الراوتر") },
-                        singleLine = true,
-                        modifier = Modifier.fillMaxWidth()
-                    )
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(16.dp),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Box(
+                        modifier = Modifier
+                            .size(52.dp)
+                            .clip(CircleShape)
+                            .background(
+                                if (firmware == FirmwareType.HUAWEI_B311) Color(0xFFFF9F0A).copy(alpha = 0.2f)
+                                else MaterialTheme.colorScheme.primary.copy(alpha = 0.2f)
+                            ),
+                        contentAlignment = Alignment.Center
+                    ) {
+                        Icon(
+                            imageVector = if (firmware == FirmwareType.HUAWEI_B311) Icons.Default.SignalCellularAlt else Icons.Default.Router,
+                            contentDescription = null,
+                            tint = if (firmware == FirmwareType.HUAWEI_B311) Color(0xFFFF9F0A) else MaterialTheme.colorScheme.primary,
+                            modifier = Modifier.size(28.dp)
+                        )
+                    }
 
-                    // اختيار نوع وبروتوكول الراوتر
-                    Text("نوع وبروتوكول الراوتر (Firmware / Protocol)", fontWeight = FontWeight.SemiBold, fontSize = 13.sp)
-                    Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
-                        FirmwareType.values().forEach { fw ->
-                            val isSelected = firmware == fw
-                            Card(
+                    Spacer(Modifier.width(14.dp))
+
+                    Column(modifier = Modifier.weight(1f)) {
+                        Text(
+                            text = name.ifBlank { "راوتر بدون اسم" },
+                            fontSize = 16.sp,
+                            fontWeight = FontWeight.Bold,
+                            color = Color.White,
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis
+                        )
+                        Spacer(Modifier.height(3.dp))
+                        Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                            Text(
+                                text = ip.ifBlank { "192.168.1.1" },
+                                fontSize = 12.sp,
+                                color = Color.Gray
+                            )
+                            Surface(
+                                shape = RoundedCornerShape(4.dp),
+                                color = Color(0xFF30D158).copy(alpha = 0.15f)
+                            ) {
+                                Text(
+                                    text = "نشط",
+                                    fontSize = 10.sp,
+                                    fontWeight = FontWeight.Bold,
+                                    color = Color(0xFF30D158),
+                                    modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp)
+                                )
+                            }
+                        }
+                    }
+                }
+            }
+        }
+
+        // 2. قسم بيانات الدخول والاتصال
+        item {
+            SettingsGroupSection(
+                title = "بيانات الاتصال والدخول",
+                subtitle = "عنوان البوابة وبيانات تسجيل الدخول للتحكم بالراوتر"
+            ) {
+                OutlinedTextField(
+                    value = name,
+                    onValueChange = {
+                        name = it
+                        saveSuccessMessage = false
+                    },
+                    label = { Text("اسم الراوتر") },
+                    leadingIcon = { Icon(Icons.Default.Badge, contentDescription = null, tint = MaterialTheme.colorScheme.primary) },
+                    singleLine = true,
+                    shape = RoundedCornerShape(12.dp),
+                    modifier = Modifier.fillMaxWidth()
+                )
+
+                Text(
+                    text = "نظام وبروتوكول الراوتر",
+                    fontSize = 12.sp,
+                    fontWeight = FontWeight.SemiBold,
+                    color = MaterialTheme.colorScheme.primary
+                )
+
+                Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                    FirmwareType.values().forEach { fw ->
+                        val isSelected = firmware == fw
+                        Surface(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .clip(RoundedCornerShape(12.dp))
+                                .clickable {
+                                    firmware = fw
+                                    saveSuccessMessage = false
+                                    if (ip.isBlank() || ip == "192.168.1.1" || ip == "192.168.8.1") {
+                                        ip = if (fw == FirmwareType.HUAWEI_B311) "192.168.8.1" else "192.168.1.1"
+                                    }
+                                },
+                            shape = RoundedCornerShape(12.dp),
+                            color = if (isSelected) MaterialTheme.colorScheme.primary.copy(alpha = 0.15f) else MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.4f),
+                            border = if (isSelected) androidx.compose.foundation.BorderStroke(1.5.dp, MaterialTheme.colorScheme.primary) else androidx.compose.foundation.BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.2f))
+                        ) {
+                            Row(
                                 modifier = Modifier
                                     .fillMaxWidth()
-                                    .clickable {
+                                    .padding(horizontal = 12.dp, vertical = 10.dp),
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                RadioButton(
+                                    selected = isSelected,
+                                    onClick = {
                                         firmware = fw
+                                        saveSuccessMessage = false
                                         if (ip.isBlank() || ip == "192.168.1.1" || ip == "192.168.8.1") {
                                             ip = if (fw == FirmwareType.HUAWEI_B311) "192.168.8.1" else "192.168.1.1"
                                         }
                                     },
-                                shape = RoundedCornerShape(8.dp),
-                                colors = CardDefaults.cardColors(
-                                    containerColor = if (isSelected) MaterialTheme.colorScheme.primary.copy(alpha = 0.15f) else MaterialTheme.colorScheme.surfaceVariant
-                                ),
-                                border = if (isSelected) androidx.compose.foundation.BorderStroke(1.dp, MaterialTheme.colorScheme.primary) else null
-                            ) {
-                                Row(
-                                    modifier = Modifier
-                                        .fillMaxWidth()
-                                        .padding(horizontal = 10.dp, vertical = 8.dp),
-                                    verticalAlignment = Alignment.CenterVertically
-                                ) {
-                                    RadioButton(
-                                        selected = isSelected,
-                                        onClick = {
-                                            firmware = fw
-                                            if (ip.isBlank() || ip == "192.168.1.1" || ip == "192.168.8.1") {
-                                                ip = if (fw == FirmwareType.HUAWEI_B311) "192.168.8.1" else "192.168.1.1"
-                                            }
-                                        },
-                                        colors = RadioButtonDefaults.colors(selectedColor = MaterialTheme.colorScheme.primary)
+                                    colors = RadioButtonDefaults.colors(selectedColor = MaterialTheme.colorScheme.primary)
+                                )
+                                Spacer(Modifier.width(8.dp))
+                                Column {
+                                    Text(
+                                        text = fw.displayName,
+                                        fontSize = 13.sp,
+                                        fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Medium,
+                                        color = if (isSelected) Color.White else Color(0xFFDDDDDD)
                                     )
-                                    Spacer(Modifier.width(6.dp))
-                                    Column {
-                                        Text(fw.displayName, fontSize = 12.sp, fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Normal)
-                                        Text(
-                                            when (fw) {
-                                                FirmwareType.ME110_BOA -> "بروتوكول Boa / login.cgi / status_traffic.html (D-Link DSL-224)"
-                                                FirmwareType.HUAWEI_B311 -> "بروتوكول HiLink API / SCRAM-SHA256 (Huawei B311)"
-                                                FirmwareType.GENERIC_REALTEK -> "بروتوكول Realtek / boaform (Generic D-Link)"
-                                            },
-                                            fontSize = 10.sp,
-                                            color = Color.Gray
-                                        )
-                                    }
+                                    Text(
+                                        text = when (fw) {
+                                            FirmwareType.ME110_BOA -> "بروتوكول Boa / login.cgi / status_traffic.html (D-Link DSL-224)"
+                                            FirmwareType.HUAWEI_B311 -> "بروتوكول HiLink API / SCRAM-SHA256 (Huawei B311)"
+                                            FirmwareType.GENERIC_REALTEK -> "بروتوكول Realtek / boaform (Generic D-Link / ZTE)"
+                                        },
+                                        fontSize = 10.sp,
+                                        color = Color.Gray
+                                    )
                                 }
                             }
                         }
                     }
+                }
 
-                    OutlinedTextField(
-                        value = ip,
-                        onValueChange = { ip = it },
-                        label = { Text("عنوان IP / Gateway") },
-                        singleLine = true,
-                        modifier = Modifier.fillMaxWidth()
-                    )
-                    OutlinedTextField(
-                        value = username,
-                        onValueChange = { username = it },
-                        label = { Text("اسم المستخدم") },
-                        singleLine = true,
-                        modifier = Modifier.fillMaxWidth()
-                    )
+                OutlinedTextField(
+                    value = ip,
+                    onValueChange = {
+                        ip = it
+                        saveSuccessMessage = false
+                    },
+                    label = { Text("عنوان IP / Gateway") },
+                    leadingIcon = { Icon(Icons.Default.Lan, contentDescription = null, tint = MaterialTheme.colorScheme.primary) },
+                    singleLine = true,
+                    shape = RoundedCornerShape(12.dp),
+                    modifier = Modifier.fillMaxWidth()
+                )
 
-                    // حقل كلمة المرور مع إمكانية الإظهار والإخفاء (Show / Hide Password)
-                    OutlinedTextField(
-                        value = password,
-                        onValueChange = { password = it },
-                        label = { Text("كلمة المرور") },
-                        singleLine = true,
-                        visualTransformation = if (passwordVisible) VisualTransformation.None else PasswordVisualTransformation(),
-                        trailingIcon = {
-                            IconButton(onClick = { passwordVisible = !passwordVisible }) {
-                                Icon(
-                                    imageVector = if (passwordVisible) Icons.Default.Visibility else Icons.Default.VisibilityOff,
-                                    contentDescription = if (passwordVisible) "إخفاء كلمة المرور" else "إظهار كلمة المرور",
-                                    tint = Color.Gray
-                                )
+                OutlinedTextField(
+                    value = username,
+                    onValueChange = {
+                        username = it
+                        saveSuccessMessage = false
+                    },
+                    label = { Text("اسم المستخدم") },
+                    leadingIcon = { Icon(Icons.Default.Person, contentDescription = null, tint = MaterialTheme.colorScheme.primary) },
+                    singleLine = true,
+                    shape = RoundedCornerShape(12.dp),
+                    modifier = Modifier.fillMaxWidth()
+                )
+
+                OutlinedTextField(
+                    value = password,
+                    onValueChange = {
+                        password = it
+                        saveSuccessMessage = false
+                    },
+                    label = { Text("كلمة المرور") },
+                    leadingIcon = { Icon(Icons.Default.VpnKey, contentDescription = null, tint = MaterialTheme.colorScheme.primary) },
+                    singleLine = true,
+                    shape = RoundedCornerShape(12.dp),
+                    visualTransformation = if (passwordVisible) VisualTransformation.None else PasswordVisualTransformation(),
+                    trailingIcon = {
+                        IconButton(onClick = { passwordVisible = !passwordVisible }) {
+                            Icon(
+                                imageVector = if (passwordVisible) Icons.Default.Visibility else Icons.Default.VisibilityOff,
+                                contentDescription = if (passwordVisible) "إخفاء كلمة المرور" else "إظهار كلمة المرور",
+                                tint = Color.Gray
+                            )
+                        }
+                    },
+                    modifier = Modifier.fillMaxWidth()
+                )
+            }
+        }
+
+        // 3. قسم سعة الباقة الشهرية
+        item {
+            SettingsGroupSection(
+                title = "سعة الباقة الشهرية",
+                subtitle = "تحديد حجم الباقة لحساب نسب الاستهلاك والمعدل الآمن يومياً"
+            ) {
+                OutlinedTextField(
+                    value = totalPlanGB,
+                    onValueChange = {
+                        totalPlanGB = it
+                        saveSuccessMessage = false
+                    },
+                    label = { Text("سعة الباقة الإجمالية (GB)") },
+                    leadingIcon = { Icon(Icons.Default.PieChart, contentDescription = null, tint = MaterialTheme.colorScheme.primary) },
+                    singleLine = true,
+                    shape = RoundedCornerShape(12.dp),
+                    modifier = Modifier.fillMaxWidth()
+                )
+
+                Text(
+                    text = "خيارات سريعة شائعة:",
+                    fontSize = 11.sp,
+                    color = Color.Gray
+                )
+
+                LazyRow(
+                    horizontalArrangement = Arrangement.spacedBy(8.dp)
+                ) {
+                    items(commonPlanChips) { chip ->
+                        val isSelected = totalPlanGB == chip
+                        Surface(
+                            shape = RoundedCornerShape(8.dp),
+                            color = if (isSelected) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.6f),
+                            border = if (!isSelected) androidx.compose.foundation.BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.3f)) else null,
+                            modifier = Modifier.clickable {
+                                totalPlanGB = chip
+                                saveSuccessMessage = false
                             }
-                        },
-                        modifier = Modifier.fillMaxWidth()
-                    )
+                        ) {
+                            Text(
+                                text = "$chip GB",
+                                fontSize = 12.sp,
+                                fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Normal,
+                                color = if (isSelected) Color.White else Color(0xFFDDDDDD),
+                                modifier = Modifier.padding(horizontal = 12.dp, vertical = 6.dp)
+                            )
+                        }
+                    }
+                }
+            }
+        }
 
-                    OutlinedTextField(
-                        value = totalPlanGB,
-                        onValueChange = { totalPlanGB = it },
-                        label = { Text("سعة الباقة الإجمالية (GB)") },
-                        singleLine = true,
-                        modifier = Modifier.fillMaxWidth()
-                    )
-
-                    // خيار محرك الويب البديل (WebUI Fallback)
+        // 4. قسم الأتمتة والمحرك البديل
+        item {
+            SettingsGroupSection(
+                title = "الميزات المتقدمة والأتمتة",
+                subtitle = "كشط البيانات التلقائي عند تعذر الاتصال المباشر"
+            ) {
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(vertical = 4.dp),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
                     Row(
-                        modifier = Modifier.fillMaxWidth(),
-                        horizontalArrangement = Arrangement.SpaceBetween,
+                        modifier = Modifier.weight(1f),
                         verticalAlignment = Alignment.CenterVertically
                     ) {
-                        Column(modifier = Modifier.weight(1f)) {
-                            Text("محرك المتصفح البديل (WebUI Fallback)", fontWeight = FontWeight.SemiBold, fontSize = 13.sp)
-                            Text("كشط البيانات والتحكم عبر صفحة الويب تلقائياً عند الحاجة", fontSize = 11.sp, color = Color.Gray)
-                        }
-                        Switch(
-                            checked = enableFallback,
-                            onCheckedChange = { enableFallback = it }
-                        )
-                    }
-
-                    Spacer(Modifier.height(4.dp))
-
-                    Button(
-                        onClick = {
-                            val updated = router.copy(
-                                name = name.trim(),
-                                routerIP = ip.trim(),
-                                username = username.trim(),
-                                password = password.trim(),
-                                firmware = firmware,
-                                totalPlanGB = totalPlanGB.toDoubleOrNull() ?: 140.0,
-                                enableWebUIFallback = enableFallback
+                        Box(
+                            modifier = Modifier
+                                .size(38.dp)
+                                .clip(RoundedCornerShape(8.dp))
+                                .background(MaterialTheme.colorScheme.primary.copy(alpha = 0.15f)),
+                            contentAlignment = Alignment.Center
+                        ) {
+                            Icon(
+                                imageVector = Icons.Default.Sync,
+                                contentDescription = null,
+                                tint = MaterialTheme.colorScheme.primary,
+                                modifier = Modifier.size(20.dp)
                             )
-                            onSave(updated)
-                        },
-                        modifier = Modifier.fillMaxWidth(),
-                        shape = RoundedCornerShape(10.dp)
-                    ) {
-                        Text("حفظ التغييرات في الهاتف", fontWeight = FontWeight.Bold)
+                        }
+                        Spacer(Modifier.width(12.dp))
+                        Column {
+                            Text(
+                                text = "محرك المتصفح البديل (WebUI Fallback)",
+                                fontSize = 13.sp,
+                                fontWeight = FontWeight.SemiBold,
+                                color = Color.White
+                            )
+                            Text(
+                                text = "كشط البيانات والتحكم عبر صفحة الويب تلقائياً عند الحاجة",
+                                fontSize = 11.sp,
+                                color = Color.Gray
+                            )
+                        }
                     }
+                    Switch(
+                        checked = enableFallback,
+                        onCheckedChange = {
+                            enableFallback = it
+                            saveSuccessMessage = false
+                        }
+                    )
                 }
             }
         }
 
-        // بطاقة تخصيص الكشط No-Code
+        // 5. قسم الأدوات الذكية وقوالب الراوترات
         item {
-            Card(
-                modifier = Modifier.fillMaxWidth(),
-                shape = RoundedCornerShape(16.dp),
-                colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface)
+            SettingsGroupSection(
+                title = "الأدوات الذكية وقوالب الراوترات",
+                subtitle = "معالجات التهيئة ومكتبة القوالب وأدوات الكشط التفاعلية"
             ) {
-                Column(modifier = Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                    Row(verticalAlignment = Alignment.CenterVertically) {
-                        Icon(Icons.Default.Tune, contentDescription = null, tint = Color(0xFF30D158))
-                        Spacer(Modifier.width(8.dp))
-                        Text("مُخصّص الكشط المرئي (No-Code Scraper UI)", fontWeight = FontWeight.Bold, fontSize = 14.sp)
-                    }
-                    Text("تخصيص محددات الاستهلاك، الأجهزة، والأزرار بدون كتابة كود لأي نوع راوتر.", fontSize = 12.sp, color = Color.Gray)
-                    Button(
-                        onClick = onOpenNoCode,
-                        modifier = Modifier.fillMaxWidth(),
-                        colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF1E3A24))
-                    ) {
-                        Icon(Icons.Default.EditRoad, contentDescription = null, tint = Color(0xFF30D158))
-                        Spacer(Modifier.width(8.dp))
-                        Text("تخصيص محددات الكشط (No-Code)", color = Color.White)
-                    }
-                }
+                // معالج الإعداد الذكي
+                SettingsNavigationRow(
+                    icon = Icons.Default.AutoAwesome,
+                    iconTint = Color(0xFF30D158),
+                    title = "معالج الإعداد والتهيئة الذكي (Setup Wizard)",
+                    subtitle = "كشف تلقائي لطراز الراوتر وضبط بيانات الدخول والباقة",
+                    onClick = onOpenWizard
+                )
+
+                Divider(color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.25f), thickness = 0.8.dp)
+
+                // مكتبة القوالب والمشاركة
+                SettingsNavigationRow(
+                    icon = Icons.Default.Layers,
+                    iconTint = Color(0xFFFF9F0A),
+                    title = "مكتبة قوالب الراوترات الجاهزة (Router Presets)",
+                    subtitle = "6 قوالب جاهزة لأشهر الراوترات مع تصدير واستيراد للحافظة",
+                    onClick = { showPresetsDialog = true }
+                )
+
+                Divider(color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.25f), thickness = 0.8.dp)
+
+                // مخصص الكشط المرئي
+                SettingsNavigationRow(
+                    icon = Icons.Default.Tune,
+                    iconTint = MaterialTheme.colorScheme.primary,
+                    title = "مُخصّص الكشط المرئي (No-Code Scraper UI)",
+                    subtitle = "تخصيص محددات الاستهلاك والأجهزة بدون كود لأي راوتر",
+                    onClick = onOpenNoCode
+                )
+
+                Divider(color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.25f), thickness = 0.8.dp)
+
+                // متصفح الراوتر والالتقاط
+                SettingsNavigationRow(
+                    icon = Icons.Default.Language,
+                    iconTint = Color(0xFFBF5AF2),
+                    title = "متصفح الراوتر المباشر والالتقاط البصري",
+                    subtitle = "تصفح واجهة الراوتر المباشرة والالتقاط البصري للأزرار",
+                    onClick = onOpenVisualPicker
+                )
             }
         }
 
-        // بطاقة لوحة أزرار WebUI
+        // 6. زر حفظ الإعدادات الرئيسي
         item {
-            Card(
-                modifier = Modifier.fillMaxWidth(),
-                shape = RoundedCornerShape(16.dp),
-                colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface)
+            Button(
+                onClick = {
+                    val updated = router.copy(
+                        name = name.trim(),
+                        routerIP = ip.trim(),
+                        username = username.trim(),
+                        password = password.trim(),
+                        firmware = firmware,
+                        totalPlanGB = totalPlanGB.toDoubleOrNull() ?: 140.0,
+                        enableWebUIFallback = enableFallback
+                    )
+                    onSave(updated)
+                    saveSuccessMessage = true
+                },
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .height(52.dp),
+                shape = RoundedCornerShape(14.dp),
+                colors = ButtonDefaults.buttonColors(
+                    containerColor = if (saveSuccessMessage) Color(0xFF30D158) else MaterialTheme.colorScheme.primary
+                )
             ) {
-                Column(modifier = Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                    Text("أدوات متصفح WebUI التفاعلي", fontWeight = FontWeight.Bold, fontSize = 14.sp)
-                    Text("فتح متصفح الراوتر المباشر لاختيار العناصر بدون كود أو التحكم بالأزرار برمجياً.", fontSize = 12.sp, color = Color.Gray)
-
-                    Button(
-                        onClick = onOpenVisualPicker,
-                        modifier = Modifier.fillMaxWidth(),
-                        colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF1E3A24))
-                    ) {
-                        Icon(Icons.Default.Adjust, contentDescription = null, tint = Color(0xFF30D158))
-                        Spacer(Modifier.width(8.dp))
-                        Text("فتح متصفح الراوتر والالتقاط البصري", color = Color.White, fontWeight = FontWeight.Bold)
-                    }
-
-                    Button(
-                        onClick = onOpenWebUI,
-                        modifier = Modifier.fillMaxWidth(),
-                        colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.surfaceVariant)
-                    ) {
-                        Icon(Icons.Default.Language, contentDescription = null, tint = Color(0xFFFF9F0A))
-                        Spacer(Modifier.width(8.dp))
-                        Text("فتح متصفح أزرار WebUI", color = Color.White)
-                    }
-                }
+                Icon(
+                    imageVector = if (saveSuccessMessage) Icons.Default.Check else Icons.Default.Save,
+                    contentDescription = null,
+                    modifier = Modifier.size(20.dp)
+                )
+                Spacer(Modifier.width(8.dp))
+                Text(
+                    text = if (saveSuccessMessage) "تم حفظ الإعدادات بنجاح" else "حفظ التغييرات في الهاتف",
+                    fontWeight = FontWeight.Bold,
+                    fontSize = 14.sp
+                )
             }
-        }
-
-        // بطاقة تشغيل معالج الإعداد الذكي
-        item {
-            Card(
-                modifier = Modifier.fillMaxWidth(),
-                shape = RoundedCornerShape(16.dp),
-                colors = CardDefaults.cardColors(containerColor = Color(0xFF1E3A24))
-            ) {
-                Column(modifier = Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                    Row(verticalAlignment = Alignment.CenterVertically) {
-                        Icon(Icons.Default.AutoAwesome, contentDescription = null, tint = Color(0xFF30D158))
-                        Spacer(Modifier.width(8.dp))
-                        Text("معالج الإعداد والتهيئة الذكي (Setup Wizard)", fontWeight = FontWeight.Bold, fontSize = 14.sp, color = Color.White)
-                    }
-                    Text("إعادة تشغيل معالج البحث التلقائي عن الراوتر وتهيئته خطوة بخطوة في ثوانٍ.", fontSize = 12.sp, color = Color(0xFFCCCCCC))
-
-                    Button(
-                        onClick = onOpenWizard,
-                        modifier = Modifier.fillMaxWidth(),
-                        colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF30D158))
-                    ) {
-                        Icon(Icons.Default.PlayArrow, contentDescription = null, tint = Color.Black)
-                        Spacer(Modifier.width(8.dp))
-                        Text("تشغيل معالج الإعداد التلقائي", color = Color.Black, fontWeight = FontWeight.Bold)
-                    }
-                }
-            }
-        }
-
-        // بطاقة مكتبة قوالب الراوترات الجاهزة والمشاركة
-        item {
-            Card(
-                modifier = Modifier.fillMaxWidth(),
-                shape = RoundedCornerShape(16.dp),
-                colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface)
-            ) {
-                Column(modifier = Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                    Row(verticalAlignment = Alignment.CenterVertically) {
-                        Icon(Icons.Default.Layers, contentDescription = null, tint = Color(0xFFFF9F0A))
-                        Spacer(Modifier.width(8.dp))
-                        Text("مكتبة قوالب الراوترات والمشاركة (Presets)", fontWeight = FontWeight.Bold, fontSize = 14.sp)
-                    }
-                    Text("اختر قالباً جاهزاً من 6 راوترات معتمدة (ZTE, Huawei, D-Link, TP-Link, Vodafone, Orange) أو شارك قالب راوترك بنقرة واحدة.", fontSize = 12.sp, color = Color.Gray)
-
-                    Button(
-                        onClick = { showPresetsDialog = true },
-                        modifier = Modifier.fillMaxWidth(),
-                        colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF382A15))
-                    ) {
-                        Icon(Icons.Default.AutoAwesome, contentDescription = null, tint = Color(0xFFFF9F0A))
-                        Spacer(Modifier.width(8.dp))
-                        Text("تصفح مكتبة القوالب وتصدير / استيراد", color = Color.White, fontWeight = FontWeight.Bold)
-                    }
-                }
-            }
+            Spacer(Modifier.height(16.dp))
         }
     }
+
+    if (showPresetsDialog) {
+        PresetsLibraryDialog(
+            currentProfile = router,
+            onDismiss = { showPresetsDialog = false },
+            onApplyProfile = { updated ->
+                onSave(updated)
+                showPresetsDialog = false
+            }
+        )
+    }
+}
+
+/**
+ * حاوية كروت Material 3 المجمعة لأقسام الإعدادات
+ */
+@Composable
+fun SettingsGroupSection(
+    title: String,
+    subtitle: String? = null,
+    content: @Composable ColumnScope.() -> Unit
+) {
+    Column(
+        modifier = Modifier.fillMaxWidth(),
+        verticalArrangement = Arrangement.spacedBy(8.dp)
+    ) {
+        Column(modifier = Modifier.padding(horizontal = 4.dp)) {
+            Text(
+                text = title,
+                fontSize = 13.sp,
+                fontWeight = FontWeight.Bold,
+                color = MaterialTheme.colorScheme.primary
+            )
+            if (!subtitle.isNullOrBlank()) {
+                Text(
+                    text = subtitle,
+                    fontSize = 11.sp,
+                    color = Color.Gray
+                )
+            }
+        }
+
+        Card(
+            modifier = Modifier.fillMaxWidth(),
+            shape = RoundedCornerShape(20.dp),
+            colors = CardDefaults.cardColors(
+                containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.35f)
+            ),
+            border = androidx.compose.foundation.BorderStroke(
+                1.dp,
+                MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.35f)
+            )
+        ) {
+            Column(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(16.dp),
+                verticalArrangement = Arrangement.spacedBy(12.dp),
+                content = content
+            )
+        }
+    }
+}
+
+/**
+ * صف تنقل تفاعلي داخل قسم الإعدادات بنمط Material 3
+ */
+@Composable
+fun SettingsNavigationRow(
+    icon: androidx.compose.ui.graphics.vector.ImageVector,
+    iconTint: Color,
+    title: String,
+    subtitle: String,
+    onClick: () -> Unit
+) {
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .clip(RoundedCornerShape(12.dp))
+            .clickable(onClick = onClick)
+            .padding(vertical = 6.dp, horizontal = 2.dp),
+        verticalAlignment = Alignment.CenterVertically
+    ) {
+        Box(
+            modifier = Modifier
+                .size(40.dp)
+                .clip(RoundedCornerShape(10.dp))
+                .background(iconTint.copy(alpha = 0.15f)),
+            contentAlignment = Alignment.Center
+        ) {
+            Icon(
+                imageVector = icon,
+                contentDescription = null,
+                tint = iconTint,
+                modifier = Modifier.size(22.dp)
+            )
+        }
+
+        Spacer(Modifier.width(12.dp))
+
+        Column(modifier = Modifier.weight(1f)) {
+            Text(
+                text = title,
+                fontSize = 13.sp,
+                fontWeight = FontWeight.SemiBold,
+                color = Color.White
+            )
+            Spacer(Modifier.height(2.dp))
+            Text(
+                text = subtitle,
+                fontSize = 11.sp,
+                color = Color.Gray,
+                lineHeight = 14.sp
+            )
+        }
+
+        Icon(
+            imageVector = Icons.Default.ChevronLeft,
+            contentDescription = null,
+            tint = Color.Gray,
+            modifier = Modifier.size(20.dp)
+        )
+    }
+}
 
     if (showPresetsDialog) {
         PresetsLibraryDialog(
