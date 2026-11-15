@@ -113,6 +113,10 @@ fun MainScreen(repo: RouterRepository) {
     var showSetupWizardDialog by remember { mutableStateOf(!storage.hasCompletedWizard()) }
     var showTopMenu by remember { mutableStateOf(false) }
 
+    fun log(msg: String) {
+        logs = listOf(msg) + logs.take(60)
+    }
+
     // التحديث التلقائي وما الجديد (GitHub Releases Auto-Update)
     var availableUpdate by remember { mutableStateOf<AppReleaseInfo?>(null) }
     var isCheckingUpdate by remember { mutableStateOf(false) }
@@ -126,10 +130,6 @@ fun MainScreen(repo: RouterRepository) {
                 log("[تحديث] يتوفر إصدار جديد (${info.remoteVersionName})")
             }
         }
-    }
-
-    fun log(msg: String) {
-        logs = listOf(msg) + logs.take(60)
     }
 
     fun updateActiveRouter(updated: RouterProfile) {
