@@ -1906,18 +1906,6 @@ fun SettingsNavigationRow(
     }
 }
 
-    if (showPresetsDialog) {
-        PresetsLibraryDialog(
-            currentProfile = router,
-            onDismiss = { showPresetsDialog = false },
-            onApplyProfile = { updated ->
-                onSave(updated)
-                showPresetsDialog = false
-            }
-        )
-    }
-}
-
 // ==================== متصفح الراوتر التفاعلي والالتقاط البصري بدون كود (Router WebUI Dialog) ====================
 class WebUIPickerBridge(
     private val onElementPickedCallback: (PickedElementInfo) -> Unit
