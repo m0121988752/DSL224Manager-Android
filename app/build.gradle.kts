@@ -3,6 +3,8 @@ plugins {
     id("org.jetbrains.kotlin.android")
 }
 
+val ciRunNumber = System.getenv("GITHUB_RUN_NUMBER")?.toIntOrNull() ?: 1
+
 android {
     namespace = "com.personal.dsl224manager"
     compileSdk = 34
@@ -11,13 +13,26 @@ android {
         applicationId = "com.personal.dsl224manager"
         minSdk = 24
         targetSdk = 34
-        versionCode = 1
-        versionName = "1.0"
+        versionCode = 100 + ciRunNumber
+        versionName = "1.1.$ciRunNumber"
+    }
+
+    signingConfigs {
+        create("release") {
+            storeFile = rootProject.file("app/keystore/release.jks")
+            storePassword = "dsl224manager"
+            keyAlias = "dsl224key"
+            keyPassword = "dsl224manager"
+        }
     }
 
     buildTypes {
+        debug {
+            signingConfig = signingConfigs.getByName("release")
+        }
         release {
             isMinifyEnabled = false
+            signingConfig = signingConfigs.getByName("release")
             proguardFiles(
                 getDefaultProguardFile("proguard-android-optimize.txt"),
                 "proguard-rules.pro"

@@ -24,10 +24,23 @@ jobs:
       run: chmod +x gradlew || true
 
     - name: Build with Gradle
-      run: ./gradlew assembleDebug --no-daemon --stacktrace
+      run: ./gradlew assembleRelease assembleDebug --no-daemon --stacktrace
+
+    - name: Prepare Artifacts
+      run: |
+        mkdir -p dist
+        cp app/build/outputs/apk/release/app-release.apk dist/
+        cp app/build/outputs/apk/debug/app-debug.apk dist/
+
+    - name: Verify APK Signatures
+      run: |
+        echo "=== Verifying Release APK Signature ==="
+        $ANDROID_HOME/build-tools/34.0.0/apksigner verify --verbose --print-certs dist/app-release.apk
+        echo "=== Verifying Debug APK Signature ==="
+        $ANDROID_HOME/build-tools/34.0.0/apksigner verify --verbose --print-certs dist/app-debug.apk
 
     - name: Upload APK Artifact
       uses: actions/upload-artifact@v4
       with:
         name: DSL224Manager-Android-APK
-        path: app/build/outputs/apk/debug/app-debug.apk
+        path: dist/

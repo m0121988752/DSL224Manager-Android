@@ -1742,7 +1742,40 @@ fun SettingsTab(
             }
         }
 
-        // 6. زر حفظ الإعدادات الرئيسي
+        // 6. قسم التحديثات والتوقيع الرقمي
+        item {
+            val context = LocalContext.current
+            SettingsGroupSection(
+                title = "الإصدار والتحديثات الرقمية",
+                subtitle = "حالة التوقيع الرقمي وإمكانية تحديث التطبيق دون حذفه"
+            ) {
+                SettingsNavigationRow(
+                    icon = Icons.Default.Security,
+                    iconTint = Color(0xFF30D158),
+                    title = "التوقيع الرقمي المعتمد (Release Keystore)",
+                    subtitle = "مفتاح رسمي دائم - يسمح بتثبيت التحديثات المستقبلية مباشرة",
+                    onClick = { /* إرشاد للمستخدم */ }
+                )
+
+                HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.2f))
+
+                SettingsNavigationRow(
+                    icon = Icons.Default.SystemUpdate,
+                    iconTint = Color(0xFF0A84FF),
+                    title = "فحص التحديثات على GitHub",
+                    subtitle = "تنزيل أحدث حزمة APK مطابقة للتوقيع الرقمي",
+                    onClick = {
+                        val intent = android.content.Intent(
+                            android.content.Intent.ACTION_VIEW,
+                            android.net.Uri.parse("https://github.com/m0121988752/DSL224Manager-Android/actions")
+                        )
+                        context.startActivity(intent)
+                    }
+                )
+            }
+        }
+
+        // 7. زر حفظ الإعدادات الرئيسي
         item {
             Button(
                 onClick = {
