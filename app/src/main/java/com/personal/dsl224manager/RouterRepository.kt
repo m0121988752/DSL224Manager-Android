@@ -41,14 +41,14 @@ class RouterRepository {
             when (profile.firmware) {
                 FirmwareType.HUAWEI_B311 -> {
                     if (profile.password.isBlank()) {
-                        onLog("⚠️ يرجى إدخال كلمة المرور أولاً")
+                        onLog("[تنبيه] يرجى إدخال كلمة المرور أولاً")
                         return@withContext false
                     }
                     val ok = ensureAuthenticatedSession(profile, onLog)
                     if (ok) {
-                        onLog("✅ تم تسجيل الدخول لراوتر هواوي بنجاح")
+                        onLog("[نجاح] تم تسجيل الدخول لراوتر هواوي بنجاح")
                     } else {
-                        onLog("❌ فشل تسجيل الدخول، تأكد من صحة كلمة المرور")
+                        onLog("[خطأ] فشل تسجيل الدخول، تأكد من صحة كلمة المرور")
                     }
                     ok
                 }
@@ -74,15 +74,15 @@ class RouterRepository {
                         } catch (_: Exception) {}
                     }
                     if (success) {
-                        onLog("✅ تم تسجيل الدخول لراوتر D-Link بنجاح")
+                        onLog("[نجاح] تم تسجيل الدخول لراوتر D-Link بنجاح")
                     } else {
-                        onLog("❌ فشل الاتصال براوتر D-Link (${profile.routerIP})")
+                        onLog("[خطأ] فشل الاتصال براوتر D-Link (${profile.routerIP})")
                     }
                     success
                 }
             }
         } catch (e: Exception) {
-            onLog("❌ خطأ أثناء الاتصال: ${e.localizedMessage}")
+            onLog("[خطأ] خطأ أثناء الاتصال: ${e.localizedMessage}")
             false
         }
     }
@@ -121,7 +121,7 @@ class RouterRepository {
                     }
 
                     if (success) {
-                        onLog("✅ تم إرسال بيانات الدخول لراوتر D-Link ($ep)")
+                        onLog("[نجاح] تم إرسال بيانات الدخول لراوتر D-Link ($ep)")
                         break
                     }
                 } catch (_: Exception) {}
@@ -315,7 +315,7 @@ class RouterRepository {
             }
 
             if (sesInfo.isNullOrBlank() || tokInfo.isNullOrBlank()) {
-                onLog("❌ تعذر جلب SesTokInfo من الراوتر")
+                onLog("[خطأ] تعذر جلب SesTokInfo من الراوتر")
                 return false
             }
 
@@ -354,7 +354,7 @@ class RouterRepository {
             }
 
             if (saltHex.isNullOrBlank() || serverNonce.isNullOrBlank()) {
-                onLog("❌ فشل تحدي الراوتر (challenge_login)")
+                onLog("[خطأ] فشل تحدي الراوتر (challenge_login)")
                 return false
             }
 
@@ -391,11 +391,11 @@ class RouterRepository {
                 res.header("__RequestVerificationToken")?.let { currentVerificationToken = it }
 
                 if (body.contains("<response>OK</response>") || body.contains("<serverproof>") || (!body.contains("<error>") && res.isSuccessful)) {
-                    onLog("✅ تم تسجيل الدخول لراوتر Huawei بنجاح (Huawei SCRAM)")
+                    onLog("[نجاح] تم تسجيل الدخول لراوتر Huawei بنجاح (Huawei SCRAM)")
                     true
                 } else {
                     val code = extractTag("code", body) ?: "غير معروف"
-                    onLog("❌ فشل المصادقة (كود: $code) - تأكد من كلمة المرور")
+                    onLog("[خطأ] فشل المصادقة (كود: $code) - تأكد من كلمة المرور")
                     false
                 }
             }
@@ -518,12 +518,12 @@ class RouterRepository {
                     }
                     if (ok) {
                         device.isBlocked = block
-                        onLog("✅ ${if (block) "تم حظر وفصل" else "تم إلغاء حظر"} الجهاز: ${device.displayName}")
+                        onLog("[نجاح] ${if (block) "تم حظر وفصل" else "تم إلغاء حظر"} الجهاز: ${device.displayName}")
                         return true
                     }
                 } catch (_: Exception) {}
             }
-            onLog("❌ تعذر إرسال أمر الحظر لراوتر D-Link")
+            onLog("[خطأ] تعذر إرسال أمر الحظر لراوتر D-Link")
             return false
         } catch (e: Exception) {
             onLog("خطأ في أمر حظر D-Link: ${e.message}")
@@ -536,7 +536,7 @@ class RouterRepository {
             // 1. ضمان وجود جلسة دخول مصادق عليها وصالحة (لتفادي خطأ 100003 و 125003)
             val sessionReady = ensureAuthenticatedSession(profile, onLog)
             if (!sessionReady) {
-                onLog("❌ تعذر توثيق الجلسة مع الراوتر قبل إرسال أمر الحظر")
+                onLog("[خطأ] تعذر توثيق الجلسة مع الراوتر قبل إرسال أمر الحظر")
                 return false
             }
 
@@ -586,7 +586,7 @@ $entriesXml                        </Ssid>
 
             if (success) {
                 device.isBlocked = block
-                onLog("✅ ${if (block) "تم حظر وفصل" else "تم إلغاء حظر"}: ${device.displayName}")
+                onLog("[نجاح] ${if (block) "تم حظر وفصل" else "تم إلغاء حظر"}: ${device.displayName}")
             }
             return success
         } catch (e: Exception) {
@@ -610,7 +610,7 @@ $entriesXml                        </Ssid>
             val ok = body.contains("<response>OK</response>") || (!body.contains("<error>") && res.isSuccessful)
             if (!ok) {
                 val code = extractTag("code", body) ?: "غير معروف"
-                onLog("❌ استجابة الراوتر: (كود: $code)")
+                onLog("[خطأ] استجابة الراوتر: (كود: $code)")
             }
             ok
         }

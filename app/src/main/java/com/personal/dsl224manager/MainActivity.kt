@@ -136,7 +136,7 @@ fun MainScreen(repo: RouterRepository) {
                 lastScrapeResult = res
                 if (res.success) {
                     updated = repo.applyScrapeResult(updated, res) { log(it) }
-                    log("✅ تم كشط ومزامنة بيانات الراوتر من الويب بنجاح")
+                    log("[نجاح] تم كشط ومزامنة بيانات الراوتر من الويب بنجاح")
                 }
             }
             updateActiveRouter(updated)
@@ -189,7 +189,7 @@ fun MainScreen(repo: RouterRepository) {
                             onDismissRequest = { showTopMenu = false }
                         ) {
                             DropdownMenuItem(
-                                text = { Text("معالج الإعداد الذكي 🪄", fontWeight = FontWeight.Bold) },
+                                text = { Text("معالج الإعداد الذكي", fontWeight = FontWeight.Bold) },
                                 onClick = {
                                     showTopMenu = false
                                     showSetupWizardDialog = true
@@ -197,7 +197,7 @@ fun MainScreen(repo: RouterRepository) {
                                 leadingIcon = { Icon(Icons.Default.AutoAwesome, contentDescription = null, tint = Color(0xFF30D158)) }
                             )
                             DropdownMenuItem(
-                                text = { Text("متصفح الراوتر والأزرار 🌐") },
+                                text = { Text("متصفح الراوتر والأزرار") },
                                 onClick = {
                                     showTopMenu = false
                                     showWebUIDialog = true
@@ -205,7 +205,7 @@ fun MainScreen(repo: RouterRepository) {
                                 leadingIcon = { Icon(Icons.Default.Language, contentDescription = null, tint = Color(0xFFFF9F0A)) }
                             )
                             DropdownMenuItem(
-                                text = { Text("التقاط عنصر بصري 🎯") },
+                                text = { Text("التقاط عنصر بصري") },
                                 onClick = {
                                     showTopMenu = false
                                     initialPickerMode = true
@@ -214,7 +214,7 @@ fun MainScreen(repo: RouterRepository) {
                                 leadingIcon = { Icon(Icons.Default.Adjust, contentDescription = null, tint = Color(0xFF30D158)) }
                             )
                             DropdownMenuItem(
-                                text = { Text("تخصيص الكشط No-Code 🎛️") },
+                                text = { Text("تخصيص الكشط No-Code") },
                                 onClick = {
                                     showTopMenu = false
                                     showNoCodeDialog = true
@@ -223,7 +223,7 @@ fun MainScreen(repo: RouterRepository) {
                             )
                             Divider(modifier = Modifier.padding(vertical = 4.dp))
                             DropdownMenuItem(
-                                text = { Text("إعادة تشغيل الراوتر (Reboot) ⏻", color = MaterialTheme.colorScheme.error, fontWeight = FontWeight.Bold) },
+                                text = { Text("إعادة تشغيل الراوتر (Reboot)", color = MaterialTheme.colorScheme.error, fontWeight = FontWeight.Bold) },
                                 onClick = {
                                     showTopMenu = false
                                     scope.launch {
@@ -232,7 +232,7 @@ fun MainScreen(repo: RouterRepository) {
                                             selector = activeRouter.customRebootButtonSelector.takeIf { it.isNotBlank() },
                                             semanticAction = SemanticButtonAction.REBOOT
                                         )
-                                        log(if (ok) "✅ $msg" else "❌ $msg")
+                                        log(if (ok) "[نجاح] $msg" else "[خطأ] $msg")
                                     }
                                 },
                                 leadingIcon = { Icon(Icons.Default.PowerSettingsNew, contentDescription = null, tint = MaterialTheme.colorScheme.error) }
@@ -317,7 +317,7 @@ fun MainScreen(repo: RouterRepository) {
                                 selector = activeRouter.customRebootButtonSelector.takeIf { it.isNotBlank() },
                                 semanticAction = SemanticButtonAction.REBOOT
                             )
-                            log(if (ok) "✅ $msg" else "❌ $msg")
+                            log(if (ok) "[نجاح] $msg" else "[خطأ] $msg")
                         }
                     }
                 )
@@ -443,7 +443,7 @@ fun MainScreen(repo: RouterRepository) {
             onSave = { updated ->
                 updateActiveRouter(updated)
                 showNoCodeDialog = false
-                log("✅ تم حفظ إعدادات الكشط المخصصة (No-Code Config)")
+                log("[نجاح] تم حفظ إعدادات الكشط المخصصة (No-Code Config)")
             },
             onOpenVisualPicker = {
                 showNoCodeDialog = false
@@ -457,9 +457,9 @@ fun MainScreen(repo: RouterRepository) {
                     lastScrapeResult = res
                     if (res.wanBytes != null && res.wanBytes > 0) {
                         val gb = res.wanBytes.toDouble() / (1024.0 * 1024.0 * 1024.0)
-                        log("✅ نجح الاختبار! تم استخراج: ${String.format("%.2f", gb)} GB")
+                        log("[نجاح] نجح الاختبار! تم استخراج: ${String.format("%.2f", gb)} GB")
                     } else {
-                        log("⚠️ تم فحص الصفحة ولكن لم يتم التقاط رقم بايتات مناسب بالمحدد الحالي")
+                        log("[تنبيه] تم فحص الصفحة ولكن لم يتم التقاط رقم بايتات مناسب بالمحدد الحالي")
                     }
                 }
             }
@@ -479,7 +479,7 @@ fun MainScreen(repo: RouterRepository) {
                 storage.setWizardCompleted(true)
                 updateActiveRouter(configuredProfile)
                 refreshActiveRouter()
-                log("🎉 تم إكمال معالج الإعداد الذكي وتفعيل راوتر (${configuredProfile.name})")
+                log("[نجاح] تم إكمال معالج الإعداد الذكي وتفعيل راوتر (${configuredProfile.name})")
             }
         )
     }
@@ -539,7 +539,7 @@ fun NoCodeScraperDialog(
                     ) {
                         Icon(Icons.Default.Adjust, contentDescription = null, tint = Color.Black)
                         Spacer(Modifier.width(8.dp))
-                        Text("فتح المتصفح والتقاط العناصر بالنقر 🎯", color = Color.Black, fontWeight = FontWeight.Bold, fontSize = 13.sp)
+                        Text("فتح المتصفح والتقاط العناصر بالنقر", color = Color.Black, fontWeight = FontWeight.Bold, fontSize = 13.sp)
                     }
                 }
 
@@ -974,28 +974,28 @@ fun DashboardTab(
                 item {
                     SuggestionChip(
                         onClick = onOpenWebUI,
-                        label = { Text("متصفح الراوتر 🌐", fontSize = 11.sp, fontWeight = FontWeight.SemiBold) },
+                        label = { Text("متصفح الراوتر", fontSize = 11.sp, fontWeight = FontWeight.SemiBold) },
                         colors = SuggestionChipDefaults.suggestionChipColors(containerColor = MaterialTheme.colorScheme.surface)
                     )
                 }
                 item {
                     SuggestionChip(
                         onClick = onOpenVisualPicker,
-                        label = { Text("التقاط عنصر 🎯", fontSize = 11.sp, fontWeight = FontWeight.SemiBold) },
+                        label = { Text("التقاط عنصر", fontSize = 11.sp, fontWeight = FontWeight.SemiBold) },
                         colors = SuggestionChipDefaults.suggestionChipColors(containerColor = MaterialTheme.colorScheme.surface)
                     )
                 }
                 item {
                     SuggestionChip(
                         onClick = onOpenWizard,
-                        label = { Text("معالج الإعداد 🪄", fontSize = 11.sp, fontWeight = FontWeight.Bold, color = Color(0xFF30D158)) },
+                        label = { Text("معالج الإعداد", fontSize = 11.sp, fontWeight = FontWeight.Bold, color = Color(0xFF30D158)) },
                         colors = SuggestionChipDefaults.suggestionChipColors(containerColor = Color(0xFF1E3A24))
                     )
                 }
                 item {
                     SuggestionChip(
                         onClick = onOpenNoCode,
-                        label = { Text("تخصيص الكشط 🎛️", fontSize = 11.sp) },
+                        label = { Text("تخصيص الكشط", fontSize = 11.sp) },
                         colors = SuggestionChipDefaults.suggestionChipColors(containerColor = MaterialTheme.colorScheme.surface)
                     )
                 }
@@ -1323,8 +1323,9 @@ fun StatsAndLogsTab(router: RouterProfile, logs: List<String>, onClearLogs: () -
                     text = log,
                     fontSize = 11.sp,
                     color = when {
-                        log.startsWith("❌") || log.contains("فشل") || log.contains("خطأ") -> MaterialTheme.colorScheme.error
-                        log.startsWith("✅") || log.contains("نجح") -> MaterialTheme.colorScheme.secondary
+                        log.startsWith("[خطأ]") || log.contains("فشل") || log.contains("خطأ") -> MaterialTheme.colorScheme.error
+                        log.startsWith("[نجاح]") || log.contains("نجح") -> MaterialTheme.colorScheme.secondary
+                        log.startsWith("[تنبيه]") || log.contains("تنبيه") -> Color(0xFFFF9F0A)
                         else -> Color.LightGray
                     },
                     modifier = Modifier
@@ -1575,7 +1576,7 @@ fun SettingsTab(
                     ) {
                         Icon(Icons.Default.Adjust, contentDescription = null, tint = Color(0xFF30D158))
                         Spacer(Modifier.width(8.dp))
-                        Text("فتح متصفح الراوتر والالتقاط البصري 🎯", color = Color.White, fontWeight = FontWeight.Bold)
+                        Text("فتح متصفح الراوتر والالتقاط البصري", color = Color.White, fontWeight = FontWeight.Bold)
                     }
 
                     Button(
@@ -1613,7 +1614,7 @@ fun SettingsTab(
                     ) {
                         Icon(Icons.Default.PlayArrow, contentDescription = null, tint = Color.Black)
                         Spacer(Modifier.width(8.dp))
-                        Text("تشغيل معالج الإعداد التلقائي 🪄", color = Color.Black, fontWeight = FontWeight.Bold)
+                        Text("تشغيل معالج الإعداد التلقائي", color = Color.Black, fontWeight = FontWeight.Bold)
                     }
                 }
             }
@@ -1641,7 +1642,7 @@ fun SettingsTab(
                     ) {
                         Icon(Icons.Default.AutoAwesome, contentDescription = null, tint = Color(0xFFFF9F0A))
                         Spacer(Modifier.width(8.dp))
-                        Text("تصفح مكتبة القوالب وتصدير / استيراد 📋", color = Color.White, fontWeight = FontWeight.Bold)
+                        Text("تصفح مكتبة القوالب وتصدير / استيراد", color = Color.White, fontWeight = FontWeight.Bold)
                     }
                 }
             }
@@ -1725,7 +1726,7 @@ fun RouterWebUIDialog(
         val next = !isPickerActive
         isPickerActive = next
         if (next) {
-            toastMessage = "تم تفعيل وضع الالتقاط 🎯: المس أي عنصر في الصفحة لتعيينه"
+            toastMessage = "تم تفعيل وضع الالتقاط: المس أي عنصر في الصفحة لتعيينه"
             injectPickerScript(webViewRef)
         } else {
             toastMessage = "تم إيقاف وضع الالتقاط"
@@ -1820,7 +1821,7 @@ fun RouterWebUIDialog(
                             )
                             Spacer(Modifier.width(4.dp))
                             Text(
-                                if (isPickerActive) "إلغاء 🎯" else "التقاط 🎯",
+                                if (isPickerActive) "إلغاء الالتقاط" else "التقاط عنصر",
                                 fontSize = 11.sp,
                                 color = if (isPickerActive) Color.Black else Color.White,
                                 fontWeight = FontWeight.Bold
@@ -1842,7 +1843,7 @@ fun RouterWebUIDialog(
                                 Icon(Icons.Default.Adjust, contentDescription = null, tint = Color.Black, modifier = Modifier.size(16.dp))
                                 Spacer(Modifier.width(6.dp))
                                 Text(
-                                    "وضع التقاط العناصر مفعّل 🎯: المس أي عنصر في الصفحة لتعيينه فوراً بدون كود",
+                                    "وضع التقاط العناصر مفعّل: المس أي عنصر في الصفحة لتعيينه فوراً بدون كود",
                                     color = Color.Black,
                                     fontSize = 11.sp,
                                     fontWeight = FontWeight.Bold
@@ -1917,7 +1918,7 @@ fun RouterWebUIDialog(
                         // زر قوالب الراوترات الجاهزة
                         SuggestionChip(
                             onClick = { showPresetsDialog = true },
-                            label = { Text("قوالب 📋", fontSize = 11.sp) },
+                            label = { Text("قوالب", fontSize = 11.sp) },
                             icon = { Icon(Icons.Default.Layers, contentDescription = null, modifier = Modifier.size(14.dp), tint = Color(0xFFFF9F0A)) }
                         )
 
@@ -2082,7 +2083,7 @@ fun RouterWebUIDialog(
             onDismiss = { showPresetsDialog = false },
             onApplyProfile = { updated ->
                 onRouterUpdated(updated)
-                toastMessage = "تم تطبيق قالب [${updated.name}] بنجاح! ✅"
+                toastMessage = "تم تطبيق قالب [${updated.name}] بنجاح"
                 showPresetsDialog = false
             }
         )
@@ -2125,7 +2126,7 @@ fun RouterWebUIDialog(
                     })();
                 """.trimIndent()
                 webViewRef?.evaluateJavascript(js) { res ->
-                    toastMessage = if (res?.contains("CLICKED_OK") == true) "تم محاكاة النقر على العنصر في المتصفح بنجاح! ⚡" else "فشل النقر أو لم يعثر على العنصر"
+                    toastMessage = if (res?.contains("CLICKED_OK") == true) "تم محاكاة النقر على العنصر في المتصفح بنجاح" else "فشل النقر أو لم يعثر على العنصر"
                 }
             },
             onAssign = { action ->
@@ -2193,31 +2194,31 @@ fun computeLivePreview(info: PickedElementInfo): String {
     // 1. فحص عداد الباقة
     val numMatch = Regex("""([0-9\.]+)\s*(GB|MB|KB|Bytes)""", RegexOption.IGNORE_CASE).find(raw)
     if (numMatch != null) {
-        return "⚡ قراءة الاستهلاك المكتشفة: ${numMatch.value}"
+        return "قراءة الاستهلاك المكتشفة: ${numMatch.value}"
     }
     val bytesMatch = Regex("""\b(\d{7,16})\b""").find(raw)
     if (bytesMatch != null) {
         val b = bytesMatch.value.toLongOrNull() ?: 0L
         val gb = b.toDouble() / (1024.0 * 1024.0 * 1024.0)
-        return "⚡ عداد البايتات: ${bytesMatch.value} (${String.format(java.util.Locale.US, "%.2f", gb)} GB)"
+        return "عداد البايتات: ${bytesMatch.value} (${String.format(java.util.Locale.US, "%.2f", gb)} GB)"
     }
 
     // 2. فحص جدول الأجهزة
     if (info.tag.equals("table", ignoreCase = true) || info.tag.equals("tbody", ignoreCase = true) || full.contains("device") || full.contains("dhcp") || full.contains("host") || full.contains("mac")) {
-        return "⚡ جدول أجهزة: سيتم استخراج عناوين MAC و IP وحالة الاتصال"
+        return "جدول أجهزة: سيتم استخراج عناوين MAC و IP وحالة الاتصال"
     }
 
     // 3. أزرار أو حقول
     if (info.tag.equals("button", ignoreCase = true) || (info.tag.equals("input", ignoreCase = true) && (info.value.isNotBlank() || full.contains("submit") || full.contains("button")))) {
         val label = raw.ifBlank { info.selector }
-        return "⚡ زر تفاعلي: \"$label\" (جاهز لتنفيذ الأوامر)"
+        return "زر تفاعلي: \"$label\" (جاهز لتنفيذ الأوامر)"
     }
 
     if (info.tag.equals("input", ignoreCase = true)) {
-        return "⚡ حقل إدخال بيانات (جاهز للتعبئة التلقائية)"
+        return "حقل إدخال بيانات (جاهز للتعبئة التلقائية)"
     }
 
-    return if (raw.isNotBlank()) "⚡ المعاينة: \"${raw.take(60)}\"" else "⚡ تم التقاط المحدد بنجاح"
+    return if (raw.isNotBlank()) "المعاينة: \"${raw.take(60)}\"" else "تم التقاط المحدد بنجاح"
 }
 
 @Composable
@@ -2324,7 +2325,7 @@ fun ElementAssignmentDialog(
                         ) {
                             Icon(Icons.Default.TouchApp, contentDescription = null, tint = Color.Black, modifier = Modifier.size(16.dp))
                             Spacer(Modifier.width(6.dp))
-                            Text("⚡ اختبار النقر المباشر (Test Click)", fontSize = 12.sp, color = Color.Black, fontWeight = FontWeight.Bold)
+                            Text("اختبار النقر المباشر (Test Click)", fontSize = 12.sp, color = Color.Black, fontWeight = FontWeight.Bold)
                         }
                     }
                 }

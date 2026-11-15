@@ -170,7 +170,7 @@ fun SetupWizardDialog(
                                     Row(verticalAlignment = Alignment.CenterVertically) {
                                         Icon(Icons.Default.CheckCircle, contentDescription = null, tint = Color(0xFF30D158), modifier = Modifier.size(20.dp))
                                         Spacer(Modifier.width(8.dp))
-                                        Text("تم الكشف عن الراوتر بنجاح! 🎯", fontWeight = FontWeight.Bold, fontSize = 13.sp, color = Color(0xFF30D158))
+                                        Text("تم الكشف عن الراوتر بنجاح", fontWeight = FontWeight.Bold, fontSize = 13.sp, color = Color(0xFF30D158))
                                     }
                                     Text("الموديل: ${detectedResult?.detectedName ?: routerName}", fontWeight = FontWeight.SemiBold, fontSize = 12.sp, color = Color.White)
                                     Text("عنوان IP الافتراضي: $routerIP", fontSize = 11.sp, color = Color(0xFFCCCCCC))
@@ -289,7 +289,7 @@ fun SetupWizardDialog(
                                     isLoginSuccess = ok
                                     isTestingLogin = false
                                     if (ok) {
-                                        testLoginMessage = "✅ تم التحقق بنجاح! كلمة المرور صحيحة وتم الاتصال بالراوتر"
+                                        testLoginMessage = "تم التحقق بنجاح! كلمة المرور صحيحة وتم الاتصال بالراوتر"
                                     }
                                 }
                             },
@@ -304,7 +304,7 @@ fun SetupWizardDialog(
                             } else {
                                 Icon(Icons.Default.Bolt, contentDescription = null, tint = Color(0xFF0A84FF), modifier = Modifier.size(16.dp))
                                 Spacer(Modifier.width(6.dp))
-                                Text("⚡ اختبار الاتصال بكلمة المرور الآن", fontSize = 12.sp, color = Color(0xFF0A84FF))
+                                Text("اختبار الاتصال بكلمة المرور الآن", fontSize = 12.sp, color = Color(0xFF0A84FF))
                             }
                         }
 
@@ -352,7 +352,7 @@ fun SetupWizardDialog(
                             shape = RoundedCornerShape(12.dp)
                         ) {
                             Column(modifier = Modifier.padding(12.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
-                                Text("جاهز للانطلاق! 🚀", fontWeight = FontWeight.Bold, fontSize = 12.sp, color = Color.White)
+                                Text("جاهز للانطلاق", fontWeight = FontWeight.Bold, fontSize = 12.sp, color = Color.White)
                                 Text("الراوتر: $routerName ($routerIP)", fontSize = 11.sp, color = Color(0xFFCCCCCC))
                                 Text("سعة الباقة: $totalPlanGB GB", fontSize = 11.sp, color = Color(0xFFCCCCCC))
                             }
@@ -393,7 +393,7 @@ fun SetupWizardDialog(
                 )
             ) {
                 Text(
-                    if (currentStep == 2) "حفظ وبدء الاستخدام 🎉" else "التالي ➡️",
+                    if (currentStep == 2) "حفظ وبدء الاستخدام" else "التالي",
                     color = if (currentStep == 2) Color.Black else Color.White,
                     fontWeight = FontWeight.Bold
                 )

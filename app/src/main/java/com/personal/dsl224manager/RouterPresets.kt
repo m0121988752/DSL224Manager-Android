@@ -325,7 +325,7 @@ fun PresetsLibraryDialog(
                                         val json = RouterPresetsManager.exportTemplate(currentProfile)
                                         val cm = context.getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
                                         cm.setPrimaryClip(ClipData.newPlainText("RouterTemplate", json))
-                                        toastMessage = "تم نسخ قالب راوترك للحافظة بنجاح! 📋"
+                                        toastMessage = "تم نسخ قالب راوترك للحافظة بنجاح"
                                     },
                                     modifier = Modifier.weight(1f),
                                     colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF0A84FF).copy(alpha = 0.25f)),
@@ -345,12 +345,12 @@ fun PresetsLibraryDialog(
                                             val clone = currentProfile.copy()
                                             if (RouterPresetsManager.importTemplate(clip, clone)) {
                                                 onApplyProfile(clone)
-                                                toastMessage = "تم استيراد وتطبيق القالب من الحافظة! ✅"
+                                                toastMessage = "تم استيراد وتطبيق القالب من الحافظة بنجاح"
                                             } else {
-                                                toastMessage = "النص في الحافظة ليس كود قالب راوتر صالح ⚠️"
+                                                toastMessage = "النص في الحافظة ليس كود قالب راوتر صالح"
                                             }
                                         } else {
-                                            toastMessage = "الحافظة فارغة! انسخ كود القالب أولاً 📋"
+                                            toastMessage = "الحافظة فارغة! انسخ كود القالب أولاً"
                                         }
                                     },
                                     modifier = Modifier.weight(1f),
