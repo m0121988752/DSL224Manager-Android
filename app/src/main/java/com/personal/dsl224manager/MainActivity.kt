@@ -17,6 +17,8 @@ import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.*
@@ -38,6 +40,7 @@ import androidx.compose.ui.unit.sp
 import androidx.compose.ui.viewinterop.AndroidView
 import androidx.compose.ui.window.Dialog
 import androidx.compose.ui.window.DialogProperties
+import android.widget.Toast
 import kotlinx.coroutines.launch
 import org.json.JSONObject
 
@@ -109,6 +112,21 @@ fun MainScreen(repo: RouterRepository) {
     // معالج الإعداد التلقائي وقائمة الأدوات العلوية
     var showSetupWizardDialog by remember { mutableStateOf(!storage.hasCompletedWizard()) }
     var showTopMenu by remember { mutableStateOf(false) }
+
+    // التحديث التلقائي وما الجديد (GitHub Releases Auto-Update)
+    var availableUpdate by remember { mutableStateOf<AppReleaseInfo?>(null) }
+    var isCheckingUpdate by remember { mutableStateOf(false) }
+
+    // فحص التحديثات بهدوء في الخلفية عند فتح التطبيق
+    LaunchedEffect(Unit) {
+        val result = AppUpdateService.checkLatestRelease(context)
+        result.onSuccess { info ->
+            if (info.hasUpdate) {
+                availableUpdate = info
+                log("[تحديث] يتوفر إصدار جديد (${info.remoteVersionName})")
+            }
+        }
+    }
 
     fun log(msg: String) {
         logs = listOf(msg) + logs.take(60)
@@ -373,7 +391,28 @@ fun MainScreen(repo: RouterRepository) {
                         showWebUIDialog = true
                     },
                     onOpenNoCode = { showNoCodeDialog = true },
-                    onOpenWizard = { showSetupWizardDialog = true }
+                    onOpenWizard = { showSetupWizardDialog = true },
+                    isCheckingUpdate = isCheckingUpdate,
+                    onCheckForUpdate = {
+                        scope.launch {
+                            isCheckingUpdate = true
+                            log("جاري فحص أحدث إصدار على GitHub Releases...")
+                            val res = AppUpdateService.checkLatestRelease(context)
+                            isCheckingUpdate = false
+                            res.onSuccess { info ->
+                                if (info.hasUpdate) {
+                                    availableUpdate = info
+                                    log("[تحديث] تم العثور على إصدار أحدث (${info.remoteVersionName})")
+                                } else {
+                                    Toast.makeText(context, "أنت تستخدم أحدث إصدار بالفعل (${info.remoteVersionName})", Toast.LENGTH_SHORT).show()
+                                    log("[تحديث] التطبيق محدث بالفعل إلى أحدث إصدار (${info.remoteVersionName})")
+                                }
+                            }.onFailure { err ->
+                                Toast.makeText(context, "تعذر التحقق من التحديث: ${err.message}", Toast.LENGTH_SHORT).show()
+                                log("[خطأ] تعذر التحقق من التحديث: ${err.message}")
+                            }
+                        }
+                    }
                 )
             }
         }
@@ -480,6 +519,17 @@ fun MainScreen(repo: RouterRepository) {
                 updateActiveRouter(configuredProfile)
                 refreshActiveRouter()
                 log("[نجاح] تم إكمال معالج الإعداد الذكي وتفعيل راوتر (${configuredProfile.name})")
+            }
+        )
+    }
+
+    // حوار التحديث التلقائي وما الجديد (What's New Dialog)
+    if (availableUpdate != null) {
+        WhatsNewUpdateDialog(
+            info = availableUpdate!!,
+            onDismiss = { availableUpdate = null },
+            onDownload = { url ->
+                AppUpdateService.openDownloadPage(context, url)
             }
         )
     }
@@ -1358,7 +1408,9 @@ fun SettingsTab(
     onOpenWebUI: () -> Unit,
     onOpenVisualPicker: () -> Unit,
     onOpenNoCode: () -> Unit,
-    onOpenWizard: () -> Unit = {}
+    onOpenWizard: () -> Unit = {},
+    isCheckingUpdate: Boolean = false,
+    onCheckForUpdate: () -> Unit = {}
 ) {
     var name by remember(router) { mutableStateOf(router.name) }
     var ip by remember(router) { mutableStateOf(router.routerIP) }
@@ -1762,15 +1814,9 @@ fun SettingsTab(
                 SettingsNavigationRow(
                     icon = Icons.Default.SystemUpdate,
                     iconTint = Color(0xFF0A84FF),
-                    title = "فحص التحديثات على GitHub",
-                    subtitle = "تنزيل أحدث حزمة APK مطابقة للتوقيع الرقمي",
-                    onClick = {
-                        val intent = android.content.Intent(
-                            android.content.Intent.ACTION_VIEW,
-                            android.net.Uri.parse("https://github.com/m0121988752/DSL224Manager-Android/actions")
-                        )
-                        context.startActivity(intent)
-                    }
+                    title = "فحص التحديثات وما الجديد (GitHub Releases)",
+                    subtitle = if (isCheckingUpdate) "جاري التحقق من أحدث إصدار على GitHub..." else "فحص الإصدارات الجديدة وسجل التغييرات وتنزيل التحديث",
+                    onClick = onCheckForUpdate
                 )
             }
         }
@@ -1937,6 +1983,130 @@ fun SettingsNavigationRow(
             modifier = Modifier.size(20.dp)
         )
     }
+}
+
+/**
+ * حوار ما الجديد والتحديث التلقائي المباشر (What's New & Auto-Update Dialog)
+ */
+@Composable
+fun WhatsNewUpdateDialog(
+    info: AppReleaseInfo,
+    onDismiss: () -> Unit,
+    onDownload: (String) -> Unit
+) {
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = {
+            Row(
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(10.dp)
+            ) {
+                Box(
+                    modifier = Modifier
+                        .size(42.dp)
+                        .clip(RoundedCornerShape(12.dp))
+                        .background(Color(0xFF0A84FF).copy(alpha = 0.15f)),
+                    contentAlignment = Alignment.Center
+                ) {
+                    Icon(
+                        imageVector = Icons.Default.SystemUpdate,
+                        contentDescription = null,
+                        tint = Color(0xFF0A84FF),
+                        modifier = Modifier.size(24.dp)
+                    )
+                }
+                Column {
+                    Text(
+                        text = "تحديث جديد متوفر",
+                        fontSize = 16.sp,
+                        fontWeight = FontWeight.Bold,
+                        color = Color.White
+                    )
+                    Text(
+                        text = info.remoteVersionName,
+                        fontSize = 12.sp,
+                        color = MaterialTheme.colorScheme.primary,
+                        fontWeight = FontWeight.SemiBold
+                    )
+                }
+            }
+        },
+        text = {
+            Column(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(top = 8.dp),
+                verticalArrangement = Arrangement.spacedBy(8.dp)
+            ) {
+                Text(
+                    text = "ما الجديد في هذا التحديث (What's New):",
+                    fontSize = 13.sp,
+                    fontWeight = FontWeight.Bold,
+                    color = Color.LightGray
+                )
+
+                Card(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .heightIn(max = 240.dp),
+                    shape = RoundedCornerShape(14.dp),
+                    colors = CardDefaults.cardColors(
+                        containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.35f)
+                    ),
+                    border = androidx.compose.foundation.BorderStroke(
+                        1.dp,
+                        MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.3f)
+                    )
+                ) {
+                    Column(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(12.dp)
+                            .verticalScroll(rememberScrollState())
+                    ) {
+                        Text(
+                            text = info.releaseNotes.ifBlank { "تحسينات عامة في الأداء والتوافق وإصلاح الأخطاء." },
+                            fontSize = 12.sp,
+                            color = Color.White,
+                            lineHeight = 18.sp
+                        )
+                    }
+                }
+
+                Text(
+                    text = "سيتم التثبيت مباشرة فوق الإصدار الحالي دون فقدان الإعدادات المحفوظة.",
+                    fontSize = 11.sp,
+                    color = Color(0xFF30D158),
+                    lineHeight = 14.sp
+                )
+            }
+        },
+        confirmButton = {
+            Button(
+                onClick = {
+                    onDownload(info.downloadUrl)
+                    onDismiss()
+                },
+                shape = RoundedCornerShape(12.dp),
+                colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.primary)
+            ) {
+                Icon(
+                    imageVector = Icons.Default.Download,
+                    contentDescription = null,
+                    modifier = Modifier.size(18.dp)
+                )
+                Spacer(Modifier.width(6.dp))
+                Text("تنزيل وتثبيت التحديث", fontWeight = FontWeight.Bold, fontSize = 13.sp)
+            }
+        },
+        dismissButton = {
+            TextButton(onClick = onDismiss) {
+                Text("لاحقاً", color = Color.Gray, fontSize = 13.sp)
+            }
+        },
+        shape = RoundedCornerShape(22.dp),
+        containerColor = MaterialTheme.colorScheme.surface
+    )
 }
 
 // ==================== متصفح الراوتر التفاعلي والالتقاط البصري بدون كود (Router WebUI Dialog) ====================
