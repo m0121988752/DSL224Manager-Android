@@ -44,6 +44,11 @@ class RouterStorage(context: Context) {
                 put("customPasswordSelector", profile.customPasswordSelector)
                 put("customLoginButtonSelector", profile.customLoginButtonSelector)
 
+                // إعدادات شبكة الجوال
+                put("networkMode", profile.networkMode)
+                put("autoSwitchTo3GOnLowSpeed", profile.autoSwitchTo3GOnLowSpeed)
+                put("lowSpeedThresholdKbps", profile.lowSpeedThresholdKbps)
+
                 // حفظ أسماء وتفاصيل الأجهزة
                 val devsArr = JSONArray()
                 profile.devices.forEach { dev ->
@@ -141,7 +146,10 @@ class RouterStorage(context: Context) {
                         customRebootButtonSelector = obj.optString("customRebootButtonSelector", ""),
                         customUsernameSelector = obj.optString("customUsernameSelector", ""),
                         customPasswordSelector = obj.optString("customPasswordSelector", ""),
-                        customLoginButtonSelector = obj.optString("customLoginButtonSelector", "")
+                        customLoginButtonSelector = obj.optString("customLoginButtonSelector", ""),
+                        networkMode = obj.optString("networkMode", "00"),
+                        autoSwitchTo3GOnLowSpeed = obj.optBoolean("autoSwitchTo3GOnLowSpeed", false),
+                        lowSpeedThresholdKbps = obj.optDouble("lowSpeedThresholdKbps", 150.0)
                     )
                 )
             }

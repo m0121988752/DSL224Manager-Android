@@ -191,12 +191,14 @@ class RouterRepository {
         // 1. جلب البيانات العامة المتاحة بدون تسجيل دخول (السرعة اللحظية + المزود + الاستهلاك)
         fetchPublicStats(updated, onLog)
 
-        // 2. إذا توفرت كلمة مرور نقوم بالمصادقة وجلب الأجهزة وحالة الحظر
+        // 2. إذا توفرت كلمة مرور نقوم بالمصادقة وجلب الأجهزة وحالة الحظر وقراءة وضع الشبكة
         if (updated.password.isNotBlank()) {
             val loggedIn = ensureAuthenticatedSession(updated, onLog)
             if (loggedIn) {
                 fetchHosts(updated, onLog)
                 fetchHuaweiBlockList(updated, onLog)
+                fetchHuaweiNetMode(updated, onLog)
+                checkAutoSwitchTo3G(updated, onLog)
             }
         }
         updated
@@ -613,6 +615,113 @@ $entriesXml                        </Ssid>
                 onLog("[خطأ] استجابة الراوتر: (كود: $code)")
             }
             ok
+        }
+    }
+
+    /**
+     * جلب وضع شبكة الجوال الحالي لراوترات Huawei (4G فقط / تلقائي / 3G فقط)
+     */
+    suspend fun fetchHuaweiNetMode(profile: RouterProfile, onLog: (String) -> Unit): String? = withContext(Dispatchers.IO) {
+        try {
+            val reqBuilder = Request.Builder().url("http://${profile.routerIP}/api/net/net-mode")
+            if (!currentSessionCookie.isNullOrBlank()) {
+                reqBuilder.addHeader("Cookie", currentSessionCookie!!)
+            }
+            client.newCall(reqBuilder.build()).execute().use { res ->
+                val body = res.body?.string().orEmpty()
+                val mode = extractTag("NetworkMode", body)
+                if (!mode.isNullOrBlank()) {
+                    profile.networkMode = mode
+                    return@withContext mode
+                }
+            }
+        } catch (_: Exception) {}
+        null
+    }
+
+    /**
+     * تغيير وتثبيت وضع شبكة الجوال لراوترات Huawei HiLink عبر API الرسمي
+     * mode: "03" = 4G فقط, "00" = تلقائي, "02" = 3G فقط, "01" = 2G فقط
+     */
+    suspend fun setHuaweiNetMode(profile: RouterProfile, targetMode: String, onLog: (String) -> Unit): Boolean = withContext(Dispatchers.IO) {
+        try {
+            val sessionReady = ensureAuthenticatedSession(profile, onLog)
+            if (!sessionReady) {
+                onLog("[خطأ] تعذر توثيق الجلسة مع الراوتر لتغيير وضع الشبكة")
+                return@withContext false
+            }
+
+            val token = getFreshSessionToken(profile.routerIP) ?: currentVerificationToken.orEmpty()
+            val xml = """
+                <?xml version="1.0" encoding="UTF-8"?>
+                <request>
+                    <NetworkMode>$targetMode</NetworkMode>
+                    <NetworkBand>3FFFFFFF</NetworkBand>
+                    <LTEBand>7FFFFFFFFFFFFFFF</LTEBand>
+                </request>
+            """.trimIndent()
+
+            var success = sendNetModeRequest(profile.routerIP, xml, token, onLog)
+            if (!success) {
+                currentSessionCookie = null
+                currentVerificationToken = null
+                if (authenticateHuawei(profile, onLog)) {
+                    val newToken = getFreshSessionToken(profile.routerIP) ?: currentVerificationToken.orEmpty()
+                    success = sendNetModeRequest(profile.routerIP, xml, newToken, onLog)
+                }
+            }
+
+            if (success) {
+                profile.networkMode = targetMode
+                val modeName = when (targetMode) {
+                    "03" -> "4G فقط (LTE Only)"
+                    "02" -> "3G فقط (WCDMA Only)"
+                    "01" -> "2G فقط (GSM Only)"
+                    else -> "تلقائي (Auto 4G/3G)"
+                }
+                onLog("[نجاح] تم تغيير وتثبيت وضع الشبكة في الراوتر: $modeName")
+            } else {
+                onLog("[خطأ] تعذر تغيير وضع الشبكة في الراوتر")
+            }
+            success
+        } catch (e: Exception) {
+            onLog("خطأ أثناء تغيير وضع الشبكة: ${e.message}")
+            false
+        }
+    }
+
+    private fun sendNetModeRequest(routerIP: String, xml: String, token: String, onLog: (String) -> Unit): Boolean {
+        try {
+            val req = Request.Builder()
+                .url("http://$routerIP/api/net/net-mode")
+                .post(xml.toRequestBody("application/xml".toMediaType()))
+                .addHeader("Cookie", currentSessionCookie.orEmpty())
+                .addHeader("__RequestVerificationToken", token)
+                .addHeader("_ResponseSource", "Broswer")
+                .build()
+
+            return client.newCall(req).execute().use { res ->
+                res.header("__RequestVerificationToken")?.let { currentVerificationToken = it }
+                val body = res.body?.string().orEmpty()
+                body.contains("<response>OK</response>", ignoreCase = true) || (!body.contains("<error>") && res.isSuccessful)
+            }
+        } catch (_: Exception) {
+            return false
+        }
+    }
+
+    /**
+     * فحص التبديل التلقائي الذكي إلى 3G عند ضعف سرعة التحميل
+     */
+    private suspend fun checkAutoSwitchTo3G(profile: RouterProfile, onLog: (String) -> Unit) {
+        if (!profile.autoSwitchTo3GOnLowSpeed) return
+        if (profile.networkMode != "03" && profile.networkMode != "00") return
+
+        // إذا كانت السرعة اللحظية منخفضة ولكن متصلة (بين 0.1 والحد المعين)
+        if (profile.liveDownloadRateKbps > 0.1 && profile.liveDownloadRateKbps < profile.lowSpeedThresholdKbps) {
+            onLog("[تنبيه ذكي] انخفاض سرعة التحميل إلى ${String.format(java.util.Locale.US, "%.1f", profile.liveDownloadRateKbps)} KB/s (أقل من الحد ${profile.lowSpeedThresholdKbps.toInt()} KB/s)")
+            onLog("جاري التبديل التلقائي لراوتر Huawei إلى وضع 3G لتحسين جودة الاتصال...")
+            setHuaweiNetMode(profile, "02", onLog)
         }
     }
 

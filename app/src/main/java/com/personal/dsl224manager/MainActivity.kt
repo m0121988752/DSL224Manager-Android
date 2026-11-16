@@ -338,6 +338,26 @@ fun MainScreen(repo: RouterRepository) {
                             )
                             log(if (ok) "[نجاح] $msg" else "[خطأ] $msg")
                         }
+                    },
+                    onFastChangeNetMode = { newMode ->
+                        val modeName = when (newMode) {
+                            "03" -> "4G فقط"
+                            "02" -> "3G فقط"
+                            else -> "تلقائي"
+                        }
+                        log("جاري إرسال أمر تثبيت وضع الشبكة إلى ($modeName)...")
+                        activeRouter = activeRouter.copy(networkMode = newMode)
+                        routers = routers.mapIndexed { idx, r -> if (idx == activeRouterIndex) activeRouter else r }
+                        storage.saveRouters(routers, activeRouterIndex)
+
+                        scope.launch {
+                            val ok = routerRepo.setHuaweiNetMode(activeRouter, newMode) { msg -> log(msg) }
+                            if (!ok) {
+                                routerRepo.fetchHuaweiNetMode(activeRouter) { log(it) }
+                            }
+                            routers = routers.mapIndexed { idx, r -> if (idx == activeRouterIndex) activeRouter else r }
+                            storage.saveRouters(routers, activeRouterIndex)
+                        }
                     }
                 )
                 MainTab.ROUTERS -> RoutersTab(
@@ -834,7 +854,8 @@ fun DashboardTab(
     onOpenVisualPicker: () -> Unit,
     onOpenWizard: () -> Unit,
     onOpenNoCode: () -> Unit,
-    onReboot: () -> Unit
+    onReboot: () -> Unit,
+    onFastChangeNetMode: ((String) -> Unit)? = null
 ) {
     var searchQuery by remember { mutableStateOf("") }
     var filterMode by remember { mutableStateOf(0) } // 0: الكل, 1: متصل, 2: محظور
@@ -1009,6 +1030,91 @@ fun DashboardTab(
                                     String.format(java.util.Locale.US, "%.1f KB/s", router.liveUploadRateKbps)
                                 }
                                 Text(upFormatted, fontSize = 13.sp, fontWeight = FontWeight.Bold, color = Color(0xFF30D158))
+                            }
+                        }
+                    }
+
+                    // شريط التبديل السريع لنوع الشبكة لراوترات Huawei HiLink
+                    if (router.firmware == FirmwareType.HUAWEI_B311) {
+                        Spacer(Modifier.height(10.dp))
+                        Column(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .background(Color(0xFF141416), RoundedCornerShape(12.dp))
+                                .padding(horizontal = 12.dp, vertical = 8.dp)
+                        ) {
+                            Row(
+                                modifier = Modifier.fillMaxWidth(),
+                                horizontalArrangement = Arrangement.SpaceBetween,
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                Row(verticalAlignment = Alignment.CenterVertically) {
+                                    Icon(
+                                        imageVector = Icons.Default.SignalCellularAlt,
+                                        contentDescription = null,
+                                        tint = MaterialTheme.colorScheme.primary,
+                                        modifier = Modifier.size(16.dp)
+                                    )
+                                    Spacer(Modifier.width(6.dp))
+                                    Text(
+                                        text = "وضع الشبكة:",
+                                        fontSize = 11.sp,
+                                        fontWeight = FontWeight.SemiBold,
+                                        color = Color.LightGray
+                                    )
+                                }
+                                val currentLabel = when (router.networkMode) {
+                                    "03" -> "4G فقط (LTE)"
+                                    "02" -> "3G فقط (WCDMA)"
+                                    else -> "تلقائي (Auto)"
+                                }
+                                Text(
+                                    text = currentLabel,
+                                    fontSize = 11.sp,
+                                    fontWeight = FontWeight.Bold,
+                                    color = if (router.networkMode == "03") Color(0xFF0A84FF) else MaterialTheme.colorScheme.primary
+                                )
+                            }
+
+                            Spacer(Modifier.height(8.dp))
+
+                            Row(
+                                modifier = Modifier.fillMaxWidth(),
+                                horizontalArrangement = Arrangement.spacedBy(6.dp)
+                            ) {
+                                val modes = listOf(
+                                    Pair("03", "4G فقط"),
+                                    Pair("00", "تلقائي"),
+                                    Pair("02", "3G فقط")
+                                )
+                                modes.forEach { (modeCode, label) ->
+                                    val isSelected = router.networkMode == modeCode
+                                    Surface(
+                                        modifier = Modifier
+                                            .weight(1f)
+                                            .clip(RoundedCornerShape(8.dp))
+                                            .clickable {
+                                                if (!isSelected) {
+                                                    onFastChangeNetMode?.invoke(modeCode)
+                                                }
+                                            },
+                                        shape = RoundedCornerShape(8.dp),
+                                        color = if (isSelected) MaterialTheme.colorScheme.primary else Color(0xFF242426),
+                                        border = if (isSelected) androidx.compose.foundation.BorderStroke(1.dp, MaterialTheme.colorScheme.primary) else null
+                                    ) {
+                                        Box(
+                                            modifier = Modifier.padding(vertical = 7.dp),
+                                            contentAlignment = Alignment.Center
+                                        ) {
+                                            Text(
+                                                text = label,
+                                                fontSize = 11.sp,
+                                                fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Medium,
+                                                color = if (isSelected) MaterialTheme.colorScheme.onPrimary else Color.White
+                                            )
+                                        }
+                                    }
+                                }
                             }
                         }
                     }
@@ -1421,6 +1527,9 @@ fun SettingsTab(
     var firmware by remember(router) { mutableStateOf(router.firmware) }
     var totalPlanGB by remember(router) { mutableStateOf(router.totalPlanGB.toInt().toString()) }
     var enableFallback by remember(router) { mutableStateOf(router.enableWebUIFallback) }
+    var networkMode by remember(router) { mutableStateOf(router.networkMode) }
+    var autoSwitchTo3G by remember(router) { mutableStateOf(router.autoSwitchTo3GOnLowSpeed) }
+    var lowSpeedThreshold by remember(router) { mutableStateOf(router.lowSpeedThresholdKbps.toInt().toString()) }
     var showPresetsDialog by remember { mutableStateOf(false) }
     var saveSuccessMessage by remember { mutableStateOf(false) }
 
@@ -1745,6 +1854,143 @@ fun SettingsTab(
             }
         }
 
+        // قسم إعدادات شبكة الجوال والتحويل الذكي لراوتر Huawei
+        if (firmware == FirmwareType.HUAWEI_B311) {
+            item {
+                SettingsGroupSection(
+                    title = "إعدادات شبكة الجوال والتحويل الذكي (HiLink 4G)",
+                    subtitle = "تثبيت نوع الشبكة والتبديل التلقائي لـ 3G عند انخفاض السرعة"
+                ) {
+                    Text(
+                        text = "وضع الشبكة المفضل",
+                        fontSize = 12.sp,
+                        fontWeight = FontWeight.SemiBold,
+                        color = MaterialTheme.colorScheme.primary
+                    )
+
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.spacedBy(8.dp)
+                    ) {
+                        val modes = listOf(
+                            Pair("03", "4G فقط (LTE)"),
+                            Pair("00", "تلقائي (Auto)"),
+                            Pair("02", "3G فقط (WCDMA)")
+                        )
+                        modes.forEach { (modeCode, label) ->
+                            val isSelected = networkMode == modeCode
+                            Surface(
+                                modifier = Modifier
+                                    .weight(1f)
+                                    .clip(RoundedCornerShape(10.dp))
+                                    .clickable {
+                                        networkMode = modeCode
+                                        saveSuccessMessage = false
+                                    },
+                                shape = RoundedCornerShape(10.dp),
+                                color = if (isSelected) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f),
+                                border = if (isSelected) androidx.compose.foundation.BorderStroke(1.5.dp, MaterialTheme.colorScheme.primary) else null
+                            ) {
+                                Box(
+                                    modifier = Modifier.padding(vertical = 10.dp),
+                                    contentAlignment = Alignment.Center
+                                ) {
+                                    Text(
+                                        text = label,
+                                        fontSize = 11.sp,
+                                        fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Medium,
+                                        color = if (isSelected) MaterialTheme.colorScheme.onPrimary else Color.White
+                                    )
+                                }
+                            }
+                        }
+                    }
+
+                    Divider(color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.25f), thickness = 0.8.dp)
+
+                    // مفتاح التحويل التلقائي لـ 3G عند ضعف السرعة
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(vertical = 4.dp),
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Row(
+                            modifier = Modifier.weight(1f),
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Box(
+                                modifier = Modifier
+                                    .size(38.dp)
+                                    .clip(RoundedCornerShape(8.dp))
+                                    .background(Color(0xFFFF9F0A).copy(alpha = 0.15f)),
+                                contentAlignment = Alignment.Center
+                            ) {
+                                Icon(
+                                    imageVector = Icons.Default.Speed,
+                                    contentDescription = null,
+                                    tint = Color(0xFFFF9F0A),
+                                    modifier = Modifier.size(20.dp)
+                                )
+                            }
+                            Spacer(Modifier.width(12.dp))
+                            Column {
+                                Text(
+                                    text = "التبديل التلقائي لـ 3G عند انخفاض السرعة",
+                                    fontSize = 13.sp,
+                                    fontWeight = FontWeight.SemiBold,
+                                    color = Color.White
+                                )
+                                Text(
+                                    text = "التحويل لـ 3G تلقائياً إذا انخفضت سرعة التحميل عن الحد المحدد",
+                                    fontSize = 11.sp,
+                                    color = Color.Gray
+                                )
+                            }
+                        }
+                        Switch(
+                            checked = autoSwitchTo3G,
+                            onCheckedChange = {
+                                autoSwitchTo3G = it
+                                saveSuccessMessage = false
+                            }
+                        )
+                    }
+
+                    if (autoSwitchTo3G) {
+                        Spacer(Modifier.height(4.dp))
+                        Text(
+                            text = "حد سرعة التحميل للتحويل (KB/s)",
+                            fontSize = 11.sp,
+                            fontWeight = FontWeight.SemiBold,
+                            color = MaterialTheme.colorScheme.primary
+                        )
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.spacedBy(6.dp)
+                        ) {
+                            listOf("50", "100", "150", "250", "500").forEach { th ->
+                                val isSelected = lowSpeedThreshold == th
+                                FilterChip(
+                                    selected = isSelected,
+                                    onClick = {
+                                        lowSpeedThreshold = th
+                                        saveSuccessMessage = false
+                                    },
+                                    label = { Text("$th KB/s", fontSize = 10.sp) },
+                                    colors = FilterChipDefaults.filterChipColors(
+                                        selectedContainerColor = MaterialTheme.colorScheme.primary,
+                                        selectedLabelColor = MaterialTheme.colorScheme.onPrimary
+                                    )
+                                )
+                            }
+                        }
+                    }
+                }
+            }
+        }
+
         // 5. قسم الأدوات الذكية وقوالب الراوترات
         item {
             SettingsGroupSection(
@@ -1833,7 +2079,10 @@ fun SettingsTab(
                         password = password.trim(),
                         firmware = firmware,
                         totalPlanGB = totalPlanGB.toDoubleOrNull() ?: 140.0,
-                        enableWebUIFallback = enableFallback
+                        enableWebUIFallback = enableFallback,
+                        networkMode = networkMode,
+                        autoSwitchTo3GOnLowSpeed = autoSwitchTo3G,
+                        lowSpeedThresholdKbps = lowSpeedThreshold.toDoubleOrNull() ?: 150.0
                     )
                     onSave(updated)
                     saveSuccessMessage = true

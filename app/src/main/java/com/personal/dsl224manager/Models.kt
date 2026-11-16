@@ -44,7 +44,12 @@ data class RouterProfile(
     var customRebootButtonSelector: String = "",
     var customUsernameSelector: String = "",
     var customPasswordSelector: String = "",
-    var customLoginButtonSelector: String = ""
+    var customLoginButtonSelector: String = "",
+
+    // إعدادات وضع شبكة الجوال والتحويل التلقائي لراوترات Huawei HiLink
+    var networkMode: String = "00", // "00": تلقائي, "03": 4G فقط, "02": 3G فقط
+    var autoSwitchTo3GOnLowSpeed: Boolean = false,
+    var lowSpeedThresholdKbps: Double = 150.0
 ) {
     val usedGB: Double get() = accumulatedBytes.toDouble() / (1024.0 * 1024.0 * 1024.0)
     val remainingGB: Double get() = (totalPlanGB - usedGB).coerceAtLeast(0.0)
