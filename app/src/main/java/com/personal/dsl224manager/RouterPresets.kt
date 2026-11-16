@@ -179,23 +179,20 @@ object RouterPresetsManager {
     /**
      * استيراد قالب راوتر من كود JSON وتطبيقه على الراوتر المحدد
      */
-    fun importTemplate(jsonString: String, target: RouterProfile): Boolean {
+    fun importTemplate(jsonString: String, target: RouterProfile): RouterProfile? {
         return try {
             val obj = JSONObject(jsonString.trim())
             if (!obj.has("dsl224_template_version") && !obj.has("customUsageSelector") && !obj.has("customDeviceTableSelector")) {
                 // ليس قالباً معروفاً
-                return false
+                return null
             }
 
-            val name = obj.optString("name", "")
-            if (name.isNotBlank()) target.name = name
-
-            val ip = obj.optString("defaultIP", obj.optString("routerIP", ""))
-            if (ip.isNotBlank()) target.routerIP = ip
+            val name = obj.optString("name", "").ifBlank { target.name }
+            val ip = obj.optString("defaultIP", obj.optString("routerIP", "")).ifBlank { target.routerIP }
 
             val fwKey = obj.optString("firmwareKey", "")
             val fwDisplay = obj.optString("firmware", "")
-            target.firmware = when {
+            val fw = when {
                 fwKey == "HUAWEI_B311" || fwDisplay.contains("B311", ignoreCase = true) || fwDisplay.contains("Huawei", ignoreCase = true) ->
                     FirmwareType.HUAWEI_B311
                 fwKey == "ME110_BOA" || fwDisplay.contains("224", ignoreCase = true) || fwDisplay.contains("Boa", ignoreCase = true) ->
@@ -203,19 +200,22 @@ object RouterPresetsManager {
                 else -> FirmwareType.GENERIC_REALTEK
             }
 
-            if (obj.has("webUIPath")) target.webUIPath = obj.optString("webUIPath", "")
-            if (obj.has("customUsageSelector")) target.customUsageSelector = obj.optString("customUsageSelector", "")
-            if (obj.has("customUsageRegex")) target.customUsageRegex = obj.optString("customUsageRegex", "")
-            if (obj.has("customUsageUnit")) target.customUsageUnit = obj.optString("customUsageUnit", "Auto")
-            if (obj.has("customDeviceTableSelector")) target.customDeviceTableSelector = obj.optString("customDeviceTableSelector", "")
-            if (obj.has("customRebootButtonSelector")) target.customRebootButtonSelector = obj.optString("customRebootButtonSelector", "")
-            if (obj.has("customUsernameSelector")) target.customUsernameSelector = obj.optString("customUsernameSelector", "")
-            if (obj.has("customPasswordSelector")) target.customPasswordSelector = obj.optString("customPasswordSelector", "")
-            if (obj.has("customLoginButtonSelector")) target.customLoginButtonSelector = obj.optString("customLoginButtonSelector", "")
-
-            true
+            target.copy(
+                name = name,
+                routerIP = ip,
+                firmware = fw,
+                webUIPath = if (obj.has("webUIPath")) obj.optString("webUIPath", target.webUIPath) else target.webUIPath,
+                customUsageSelector = if (obj.has("customUsageSelector")) obj.optString("customUsageSelector", target.customUsageSelector) else target.customUsageSelector,
+                customUsageRegex = if (obj.has("customUsageRegex")) obj.optString("customUsageRegex", target.customUsageRegex) else target.customUsageRegex,
+                customUsageUnit = if (obj.has("customUsageUnit")) obj.optString("customUsageUnit", target.customUsageUnit) else target.customUsageUnit,
+                customDeviceTableSelector = if (obj.has("customDeviceTableSelector")) obj.optString("customDeviceTableSelector", target.customDeviceTableSelector) else target.customDeviceTableSelector,
+                customRebootButtonSelector = if (obj.has("customRebootButtonSelector")) obj.optString("customRebootButtonSelector", target.customRebootButtonSelector) else target.customRebootButtonSelector,
+                customUsernameSelector = if (obj.has("customUsernameSelector")) obj.optString("customUsernameSelector", target.customUsernameSelector) else target.customUsernameSelector,
+                customPasswordSelector = if (obj.has("customPasswordSelector")) obj.optString("customPasswordSelector", target.customPasswordSelector) else target.customPasswordSelector,
+                customLoginButtonSelector = if (obj.has("customLoginButtonSelector")) obj.optString("customLoginButtonSelector", target.customLoginButtonSelector) else target.customLoginButtonSelector
+            )
         } catch (_: Exception) {
-            false
+            null
         }
     }
 
@@ -342,9 +342,9 @@ fun PresetsLibraryDialog(
                                         val cm = context.getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
                                         val clip = cm.primaryClip?.getItemAt(0)?.text?.toString() ?: ""
                                         if (clip.isNotBlank()) {
-                                            val clone = currentProfile.copy()
-                                            if (RouterPresetsManager.importTemplate(clip, clone)) {
-                                                onApplyProfile(clone)
+                                            val imported = RouterPresetsManager.importTemplate(clip, currentProfile)
+                                            if (imported != null) {
+                                                onApplyProfile(imported)
                                                 toastMessage = "تم استيراد وتطبيق القالب من الحافظة بنجاح"
                                             } else {
                                                 toastMessage = "النص في الحافظة ليس كود قالب راوتر صالح"

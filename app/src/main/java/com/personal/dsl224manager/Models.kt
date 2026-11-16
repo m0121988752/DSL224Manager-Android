@@ -11,7 +11,7 @@ enum class FirmwareType(val displayName: String) {
 data class NetworkDevice(
     val ipAddress: String,
     val macAddress: String,
-    val originalHostname: String,
+    val originalHostname: String = "",
     val customName: String? = null,
     val isOnline: Boolean = true,
     val isBlocked: Boolean = false,

@@ -178,7 +178,6 @@ class RouterStorage(context: Context) {
                         carrierName = obj.optString("carrierName", ""),
                         liveDownloadRateKbps = obj.optDouble("liveDownloadRateKbps", 0.0),
                         liveUploadRateKbps = obj.optDouble("liveUploadRateKbps", 0.0),
-                        accumulatedBytes = obj.optLong("accumulatedBytes", 0L),
                         devices = devsList,
                         enableWebUIFallback = obj.optBoolean("enableWebUIFallback", true),
                         webUIPath = obj.optString("webUIPath", ""),

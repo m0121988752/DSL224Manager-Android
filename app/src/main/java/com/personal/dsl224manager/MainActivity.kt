@@ -607,6 +607,7 @@ fun MainScreen(repo: RouterRepository) {
                             val newDev = NetworkDevice(
                                 ipAddress = devIP.trim(),
                                 macAddress = cleanMac,
+                                originalHostname = devName.trim(),
                                 customName = devName.trim(),
                                 isOnline = true,
                                 isTrusted = isTrustedDev

@@ -112,11 +112,11 @@ class RouterRepository {
 
         // تسجيل استهلاك اليوم في سجل 30 يوماً
         val todayKey = SimpleDateFormat("yyyy-MM-dd", Locale.US).format(Date())
-        val currentDayGB = baseProfile.dailyHistory[todayKey] ?: 0.0
         val deltaGB = if (delta > 0L) delta.toDouble() / (1024.0 * 1024.0 * 1024.0) else 0.0
-        val updatedHistory = baseProfile.dailyHistory.toMutableMap().apply {
-            put(todayKey, currentDayGB + deltaGB)
-        }
+        val historyMap = baseProfile.dailyHistory.associate { it.dateKey to it.consumedGB }.toMutableMap()
+        val currentDayGB = historyMap[todayKey] ?: 0.0
+        historyMap[todayKey] = currentDayGB + deltaGB
+        val updatedHistory = historyMap.map { DailyUsageRecord(it.key, it.value) }.sortedByDescending { it.dateKey }.take(30)
 
         return baseProfile.copy(
             accumulatedBytes = newAccumulated,
@@ -791,7 +791,8 @@ $entriesXml                        </Ssid>
 
         if (sent) {
             if (isThrottling) {
-                onLog("[نجاح] تم تحديد سرعة (${device.displayName}) إلى ${device.speedLabel(rateVal)}")
+                val speedText = if (rateVal >= 1024 && rateVal % 1024 == 0) "${rateVal / 1024} ميجا" else "$rateVal ك.ب"
+                onLog("[نجاح] تم تحديد سرعة (${device.displayName}) إلى $speedText")
             } else {
                 onLog("[نجاح] تم إلغاء تحديد سرعة (${device.displayName}) واستعادة السرعة الكاملة")
             }
