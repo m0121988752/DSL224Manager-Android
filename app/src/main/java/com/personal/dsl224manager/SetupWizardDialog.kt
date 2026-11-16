@@ -2,6 +2,8 @@ package com.personal.dsl224manager
 
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.lazy.LazyRow
+import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -188,46 +190,50 @@ fun SetupWizardDialog(
 
                             // اختيار يدوي للموديل إن رغب المستخدم
                             Text("أو اختر موديل راوترك يدوياً:", fontSize = 11.sp, color = Color.Gray)
-                            Row(
+                            LazyRow(
                                 modifier = Modifier.fillMaxWidth(),
-                                horizontalArrangement = Arrangement.spacedBy(6.dp)
+                                horizontalArrangement = Arrangement.spacedBy(8.dp),
+                                contentPadding = PaddingValues(vertical = 4.dp)
                             ) {
-                                SuggestionChip(
-                                    onClick = {
-                                        routerName = "راوتر Huawei 4G (B311)"
-                                        firmware = FirmwareType.HUAWEI_B311
-                                        routerIP = "192.168.8.1"
-                                        selectedPresetId = "huawei_b311"
-                                    },
-                                    label = { Text("Huawei 4G", fontSize = 11.sp) },
-                                    colors = SuggestionChipDefaults.suggestionChipColors(
-                                        containerColor = if (firmware == FirmwareType.HUAWEI_B311) Color(0xFF0A84FF).copy(alpha = 0.3f) else Color.Transparent
+                                item {
+                                    FilterChip(
+                                        selected = firmware == FirmwareType.HUAWEI_B311,
+                                        onClick = {
+                                            routerName = "راوتر Huawei 4G (B311)"
+                                            firmware = FirmwareType.HUAWEI_B311
+                                            if (routerIP.isBlank() || routerIP == "192.168.1.1") routerIP = "192.168.8.1"
+                                            selectedPresetId = "huawei_b311"
+                                        },
+                                        label = { Text("Huawei 4G", fontSize = 11.sp, maxLines = 1, softWrap = false) },
+                                        shape = RoundedCornerShape(10.dp)
                                     )
-                                )
-                                SuggestionChip(
-                                    onClick = {
-                                        routerName = "راوتر D-Link (DSL-224)"
-                                        firmware = FirmwareType.ME110_BOA
-                                        routerIP = "192.168.1.1"
-                                        selectedPresetId = "dlink_dsl224"
-                                    },
-                                    label = { Text("D-Link 224", fontSize = 11.sp) },
-                                    colors = SuggestionChipDefaults.suggestionChipColors(
-                                        containerColor = if (firmware == FirmwareType.ME110_BOA) Color(0xFF0A84FF).copy(alpha = 0.3f) else Color.Transparent
+                                }
+                                item {
+                                    FilterChip(
+                                        selected = firmware == FirmwareType.ME110_BOA,
+                                        onClick = {
+                                            routerName = "راوتر D-Link (DSL-224)"
+                                            firmware = FirmwareType.ME110_BOA
+                                            if (routerIP.isBlank() || routerIP == "192.168.8.1") routerIP = "192.168.1.1"
+                                            selectedPresetId = "dlink_dsl224"
+                                        },
+                                        label = { Text("D-Link 224", fontSize = 11.sp, maxLines = 1, softWrap = false) },
+                                        shape = RoundedCornerShape(10.dp)
                                     )
-                                )
-                                SuggestionChip(
-                                    onClick = {
-                                        routerName = "راوتر ZTE ZXHN H168N"
-                                        firmware = FirmwareType.GENERIC_REALTEK
-                                        routerIP = "192.168.1.1"
-                                        selectedPresetId = "zte_h168n"
-                                    },
-                                    label = { Text("ZTE VDSL", fontSize = 11.sp) },
-                                    colors = SuggestionChipDefaults.suggestionChipColors(
-                                        containerColor = if (firmware == FirmwareType.GENERIC_REALTEK) Color(0xFF0A84FF).copy(alpha = 0.3f) else Color.Transparent
+                                }
+                                item {
+                                    FilterChip(
+                                        selected = firmware == FirmwareType.GENERIC_REALTEK,
+                                        onClick = {
+                                            routerName = "راوتر ZTE ZXHN H168N"
+                                            firmware = FirmwareType.GENERIC_REALTEK
+                                            if (routerIP.isBlank() || routerIP == "192.168.8.1") routerIP = "192.168.1.1"
+                                            selectedPresetId = "zte_h168n"
+                                        },
+                                        label = { Text("ZTE VDSL", fontSize = 11.sp, maxLines = 1, softWrap = false) },
+                                        shape = RoundedCornerShape(10.dp)
                                     )
-                                )
+                                }
                             }
                         }
                     }
@@ -323,17 +329,40 @@ fun SetupWizardDialog(
                         Text("الخطوة 3: سعة باقة الإنترنت الشهرية", fontWeight = FontWeight.Bold, fontSize = 13.sp)
                         Text("اختر أو اكتب سعة باقتك بالجيجابايت لمتابعة الاستهلاك بدقة:", fontSize = 11.sp, color = Color.Gray)
 
-                        Row(
+                        LazyRow(
                             modifier = Modifier.fillMaxWidth(),
-                            horizontalArrangement = Arrangement.spacedBy(6.dp)
+                            horizontalArrangement = Arrangement.spacedBy(8.dp),
+                            contentPadding = PaddingValues(vertical = 4.dp)
                         ) {
-                            listOf("140", "200", "250", "300").forEach { gbVal ->
-                                SuggestionChip(
+                            val planOptions = listOf("140", "200", "250", "300", "400", "600")
+                            items(planOptions) { gbVal ->
+                                FilterChip(
+                                    selected = totalPlanGB == gbVal,
                                     onClick = { totalPlanGB = gbVal },
-                                    label = { Text("$gbVal GB", fontSize = 11.sp) },
-                                    colors = SuggestionChipDefaults.suggestionChipColors(
-                                        containerColor = if (totalPlanGB == gbVal) Color(0xFF30D158).copy(alpha = 0.3f) else Color.Transparent
-                                    )
+                                    label = {
+                                        Text(
+                                            text = "$gbVal GB",
+                                            fontSize = 12.sp,
+                                            fontWeight = if (totalPlanGB == gbVal) FontWeight.Bold else FontWeight.Normal,
+                                            maxLines = 1,
+                                            softWrap = false
+                                        )
+                                    },
+                                    leadingIcon = if (totalPlanGB == gbVal) {
+                                        {
+                                            Icon(
+                                                imageVector = Icons.Default.Check,
+                                                contentDescription = null,
+                                                modifier = Modifier.size(14.dp)
+                                            )
+                                        }
+                                    } else null,
+                                    colors = FilterChipDefaults.filterChipColors(
+                                        selectedContainerColor = Color(0xFF30D158).copy(alpha = 0.25f),
+                                        selectedLabelColor = Color(0xFF30D158),
+                                        selectedLeadingIconColor = Color(0xFF30D158)
+                                    ),
+                                    shape = RoundedCornerShape(10.dp)
                                 )
                             }
                         }
@@ -367,21 +396,32 @@ fun SetupWizardDialog(
                     if (currentStep < 2) {
                         currentStep += 1
                     } else {
-                        // إنهاء وحفظ
+                        // إنهاء وحفظ مع الحفاظ الصارم على عنوان IP والبيانات التي حددها المستخدم
+                        val trimmedIP = routerIP.trim().ifEmpty { "192.168.1.1" }
+                        val trimmedName = routerName.trim().ifEmpty { "راوتر منزلي" }
+                        val trimmedUser = username.trim().ifEmpty { "admin" }
+                        val trimmedPass = password.trim()
+                        val planGB = totalPlanGB.toDoubleOrNull() ?: 140.0
+
                         var finalProfile = initialRouter.copy(
-                            name = routerName.trim().ifEmpty { "راوتر منزلي" },
-                            routerIP = routerIP.trim().ifEmpty { "192.168.1.1" },
-                            username = username.trim().ifEmpty { "admin" },
-                            password = password.trim(),
+                            name = trimmedName,
+                            routerIP = trimmedIP,
+                            username = trimmedUser,
+                            password = trimmedPass,
                             firmware = firmware,
-                            totalPlanGB = totalPlanGB.toDoubleOrNull() ?: 140.0
+                            totalPlanGB = planGB
                         )
 
-                        // تطبيق القالب الجاهز إن وجد لضبط الـ No-Code تلقائياً
+                        // تطبيق القالب الجاهز لضبط محددات الـ No-Code فقط دون تجاوز عنوان IP ومواصفات المستخدم
                         selectedPresetId?.let { pid ->
                             RouterPresetsManager.builtinPresets.find { it.id == pid }?.let { preset ->
-                                finalProfile = RouterPresetsManager.applyPreset(preset, finalProfile)
-                                finalProfile.password = password.trim()
+                                finalProfile = RouterPresetsManager.applyPreset(preset, finalProfile).copy(
+                                    name = trimmedName,
+                                    routerIP = trimmedIP,
+                                    username = trimmedUser,
+                                    password = trimmedPass,
+                                    totalPlanGB = planGB
+                                )
                             }
                         }
 
@@ -402,7 +442,11 @@ fun SetupWizardDialog(
         dismissButton = {
             if (currentStep > 0) {
                 TextButton(onClick = { currentStep -= 1 }) {
-                    Text("السابق ⬅️")
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        Icon(Icons.Default.ChevronRight, contentDescription = null, modifier = Modifier.size(16.dp))
+                        Spacer(Modifier.width(2.dp))
+                        Text("السابق")
+                    }
                 }
             } else {
                 TextButton(onClick = onDismiss) {

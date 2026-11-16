@@ -141,11 +141,12 @@ fun MainScreen(repo: RouterRepository) {
         storage.saveRouters(routers, activeRouterIndex)
     }
 
-    fun refreshActiveRouter() {
+    fun refreshActiveRouter(target: RouterProfile? = null) {
+        val targetRouter = target ?: routers.getOrElse(activeRouterIndex) { activeRouter }
         scope.launch {
             isLoading = true
-            log("جاري تحديث بيانات الراوتر (${activeRouter.name})...")
-            var updated = repo.refreshRouter(activeRouter) { log(it) }
+            log("جاري تحديث بيانات الراوتر (${targetRouter.name})...")
+            var updated = repo.refreshRouter(targetRouter) { log(it) }
 
             // تفعيل WebUI Fallback التلقائي إذا تعذرت القراءة أو كان الاستهلاك صفراً
             if (updated.accumulatedBytes == 0L && updated.enableWebUIFallback) {
@@ -517,7 +518,7 @@ fun MainScreen(repo: RouterRepository) {
                 showSetupWizardDialog = false
                 storage.setWizardCompleted(true)
                 updateActiveRouter(configuredProfile)
-                refreshActiveRouter()
+                refreshActiveRouter(configuredProfile)
                 log("[نجاح] تم إكمال معالج الإعداد الذكي وتفعيل راوتر (${configuredProfile.name})")
             }
         )
@@ -1052,7 +1053,7 @@ fun DashboardTab(
                 item {
                     SuggestionChip(
                         onClick = onReboot,
-                        label = { Text("إعادة التشغيل ⏻", fontSize = 11.sp, color = MaterialTheme.colorScheme.error) },
+                        label = { Text("إعادة التشغيل", fontSize = 11.sp, color = MaterialTheme.colorScheme.error) },
                         colors = SuggestionChipDefaults.suggestionChipColors(containerColor = MaterialTheme.colorScheme.surface)
                     )
                 }
