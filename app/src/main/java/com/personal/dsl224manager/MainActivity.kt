@@ -346,17 +346,15 @@ fun MainScreen(repo: RouterRepository) {
                             else -> "تلقائي"
                         }
                         log("جاري إرسال أمر تثبيت وضع الشبكة إلى ($modeName)...")
-                        activeRouter = activeRouter.copy(networkMode = newMode)
-                        routers = routers.mapIndexed { idx, r -> if (idx == activeRouterIndex) activeRouter else r }
-                        storage.saveRouters(routers, activeRouterIndex)
+                        val updated = activeRouter.copy(networkMode = newMode)
+                        updateActiveRouter(updated)
 
                         scope.launch {
-                            val ok = routerRepo.setHuaweiNetMode(activeRouter, newMode) { msg -> log(msg) }
+                            val ok = repo.setHuaweiNetMode(updated, newMode) { msg -> log(msg) }
                             if (!ok) {
-                                routerRepo.fetchHuaweiNetMode(activeRouter) { log(it) }
+                                repo.fetchHuaweiNetMode(updated) { msg -> log(msg) }
                             }
-                            routers = routers.mapIndexed { idx, r -> if (idx == activeRouterIndex) activeRouter else r }
-                            storage.saveRouters(routers, activeRouterIndex)
+                            updateActiveRouter(updated)
                         }
                     }
                 )
