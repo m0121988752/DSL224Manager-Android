@@ -7,8 +7,12 @@ import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.text.KeyboardActions
+import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.filled.ArrowBack
+import androidx.compose.material.icons.automirrored.filled.ArrowForward
 import androidx.compose.material.icons.filled.*
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
@@ -17,16 +21,21 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalFocusManager
+import androidx.compose.ui.platform.LocalLayoutDirection
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.input.ImeAction
+import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.text.input.VisualTransformation
+import androidx.compose.ui.unit.LayoutDirection
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import kotlinx.coroutines.launch
 
 /**
  * معالج الإعداد والتهيئة السريعة لأول مرة (First-Time Setup Wizard)
- * يكتشف الراوتر وعنوان IP تلقائياً، ويساعد المستخدم في إدخال كلمة المرور والباقة بأسلوب مرشد وبسيط.
+ * يكتشف الراوتر وعنوان IP تلقائياً، ويساعد المستخدم في إدخال كلمة المرور والباقة ودورة التجديد بأسلوب مرشد وبسيط.
  */
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -38,6 +47,7 @@ fun SetupWizardDialog(
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
     val repo = remember { RouterRepository() }
+    val focusManager = LocalFocusManager.current
 
     var currentStep by remember { mutableStateOf(0) }
     var isDetecting by remember { mutableStateOf(true) }
@@ -52,6 +62,8 @@ fun SetupWizardDialog(
     var firmware by remember { mutableStateOf(initialRouter.firmware) }
     var selectedPresetId by remember { mutableStateOf<String?>(null) }
     var totalPlanGB by remember { mutableStateOf(initialRouter.totalPlanGB.toInt().toString()) }
+    var renewalDayText by remember { mutableStateOf(initialRouter.renewalDay.toString()) }
+    var manualOffsetGBText by remember { mutableStateOf(if (initialRouter.manualOffsetGB > 0) initialRouter.manualOffsetGB.toString() else "0") }
 
     var isTestingLogin by remember { mutableStateOf(false) }
     var testLoginMessage by remember { mutableStateOf<String?>(null) }
@@ -97,7 +109,8 @@ fun SetupWizardDialog(
                     .verticalScroll(rememberScrollState()),
                 verticalArrangement = Arrangement.spacedBy(14.dp)
             ) {
-                // مؤشر الخطوات
+                // مؤشر الخطوات الأربع
+                val steps = listOf("1. الاكتشاف", "2. الدخول", "3. الباقة", "4. الإنهاء")
                 Row(
                     modifier = Modifier
                         .fillMaxWidth()
@@ -105,7 +118,7 @@ fun SetupWizardDialog(
                     horizontalArrangement = Arrangement.SpaceBetween,
                     verticalAlignment = Alignment.CenterVertically
                 ) {
-                    listOf("1. اكتشاف الراوتر", "2. كلمة المرور", "3. سعة الباقة").forEachIndexed { index, stepTitle ->
+                    steps.forEachIndexed { index, stepTitle ->
                         val isActive = currentStep == index
                         val isDone = currentStep > index
                         Row(verticalAlignment = Alignment.CenterVertically) {
@@ -131,7 +144,7 @@ fun SetupWizardDialog(
                             Spacer(Modifier.width(4.dp))
                             Text(
                                 stepTitle.substringAfter(". "),
-                                fontSize = 11.sp,
+                                fontSize = 10.sp,
                                 color = if (isActive) Color.White else Color.Gray,
                                 fontWeight = if (isActive) FontWeight.Bold else FontWeight.Normal
                             )
@@ -139,7 +152,7 @@ fun SetupWizardDialog(
                     }
                 }
 
-                Divider(color = Color(0xFF2C2C2E))
+                HorizontalDivider(color = Color(0xFF2C2C2E))
 
                 when (currentStep) {
                     // ================= الخطوة 1: الكشف التلقائي عن الراوتر =================
@@ -158,11 +171,10 @@ fun SetupWizardDialog(
                                 ) {
                                     CircularProgressIndicator(modifier = Modifier.size(24.dp), strokeWidth = 2.dp, color = Color(0xFF30D158))
                                     Spacer(Modifier.width(12.dp))
-                                    Text("جارِ البحث التلقائي عن الراوتر المتصل بالواي فاي...", fontSize = 12.sp)
+                                    Text("جارٍ البحث التلقائي عن الراوتر المتصل بالواي فاي...", fontSize = 12.sp)
                                 }
                             }
                         } else {
-                            // نتيجة الاكتشاف
                             Card(
                                 modifier = Modifier.fillMaxWidth(),
                                 colors = CardDefaults.cardColors(containerColor = Color(0xFF1E3A24)),
@@ -175,20 +187,25 @@ fun SetupWizardDialog(
                                         Text("تم الكشف عن الراوتر بنجاح", fontWeight = FontWeight.Bold, fontSize = 13.sp, color = Color(0xFF30D158))
                                     }
                                     Text("الموديل: ${detectedResult?.detectedName ?: routerName}", fontWeight = FontWeight.SemiBold, fontSize = 12.sp, color = Color.White)
-                                    Text("عنوان IP الافتراضي: $routerIP", fontSize = 11.sp, color = Color(0xFFCCCCCC))
+                                    CompositionLocalProvider(LocalLayoutDirection provides LayoutDirection.Ltr) {
+                                        Text("IP: $routerIP", fontSize = 11.sp, color = Color(0xFFCCCCCC))
+                                    }
                                     Text(detectedResult?.description ?: "", fontSize = 10.sp, color = Color.Gray)
                                 }
                             }
 
-                            OutlinedTextField(
-                                value = routerIP,
-                                onValueChange = { routerIP = it },
-                                label = { Text("عنوان IP / Gateway") },
-                                singleLine = true,
-                                modifier = Modifier.fillMaxWidth()
-                            )
+                            CompositionLocalProvider(LocalLayoutDirection provides LayoutDirection.Ltr) {
+                                OutlinedTextField(
+                                    value = routerIP,
+                                    onValueChange = { routerIP = it },
+                                    label = { Text("عنوان IP / Gateway") },
+                                    singleLine = true,
+                                    keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Ascii, imeAction = ImeAction.Next),
+                                    keyboardActions = KeyboardActions(onNext = { focusManager.clearFocus() }),
+                                    modifier = Modifier.fillMaxWidth()
+                                )
+                            }
 
-                            // اختيار يدوي للموديل إن رغب المستخدم
                             Text("أو اختر موديل راوترك يدوياً:", fontSize = 11.sp, color = Color.Gray)
                             LazyRow(
                                 modifier = Modifier.fillMaxWidth(),
@@ -247,41 +264,47 @@ fun SetupWizardDialog(
                             color = Color.Gray
                         )
 
-                        OutlinedTextField(
-                            value = username,
-                            onValueChange = { username = it },
-                            label = { Text("اسم المستخدم (Username)") },
-                            singleLine = true,
-                            modifier = Modifier.fillMaxWidth()
-                        )
+                        CompositionLocalProvider(LocalLayoutDirection provides LayoutDirection.Ltr) {
+                            OutlinedTextField(
+                                value = username,
+                                onValueChange = { username = it },
+                                label = { Text("اسم المستخدم (Username)") },
+                                singleLine = true,
+                                keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Ascii, imeAction = ImeAction.Next),
+                                modifier = Modifier.fillMaxWidth()
+                            )
+                        }
 
-                        OutlinedTextField(
-                            value = password,
-                            onValueChange = {
-                                password = it
-                                testLoginMessage = null
-                            },
-                            label = { Text("كلمة المرور (Password)") },
-                            singleLine = true,
-                            visualTransformation = if (passwordVisible) VisualTransformation.None else PasswordVisualTransformation(),
-                            trailingIcon = {
-                                IconButton(onClick = { passwordVisible = !passwordVisible }) {
-                                    Icon(
-                                        imageVector = if (passwordVisible) Icons.Default.Visibility else Icons.Default.VisibilityOff,
-                                        contentDescription = null,
-                                        tint = Color.Gray
-                                    )
-                                }
-                            },
-                            modifier = Modifier.fillMaxWidth()
-                        )
+                        CompositionLocalProvider(LocalLayoutDirection provides LayoutDirection.Ltr) {
+                            OutlinedTextField(
+                                value = password,
+                                onValueChange = {
+                                    password = it
+                                    testLoginMessage = null
+                                },
+                                label = { Text("كلمة المرور (Password)") },
+                                singleLine = true,
+                                keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Password, imeAction = ImeAction.Done),
+                                keyboardActions = KeyboardActions(onDone = { focusManager.clearFocus() }),
+                                visualTransformation = if (passwordVisible) VisualTransformation.None else PasswordVisualTransformation(),
+                                trailingIcon = {
+                                    IconButton(onClick = { passwordVisible = !passwordVisible }) {
+                                        Icon(
+                                            imageVector = if (passwordVisible) Icons.Default.Visibility else Icons.Default.VisibilityOff,
+                                            contentDescription = null,
+                                            tint = Color.Gray
+                                        )
+                                    }
+                                },
+                                modifier = Modifier.fillMaxWidth()
+                            )
+                        }
 
-                        // زر اختبار الاتصال اللحظي
                         Button(
                             onClick = {
                                 scope.launch {
                                     isTestingLogin = true
-                                    testLoginMessage = "جارِ اختبار الاتصال بـ $routerIP..."
+                                    testLoginMessage = "جارٍ اختبار الاتصال بـ $routerIP..."
                                     val testProfile = initialRouter.copy(
                                         name = routerName,
                                         routerIP = routerIP.trim(),
@@ -306,7 +329,7 @@ fun SetupWizardDialog(
                             if (isTestingLogin) {
                                 CircularProgressIndicator(modifier = Modifier.size(16.dp), strokeWidth = 2.dp, color = Color(0xFF0A84FF))
                                 Spacer(Modifier.width(8.dp))
-                                Text("جارِ فحص الاتصال...", fontSize = 12.sp)
+                                Text("جارٍ فحص الاتصال...", fontSize = 12.sp)
                             } else {
                                 Icon(Icons.Default.Bolt, contentDescription = null, tint = Color(0xFF0A84FF), modifier = Modifier.size(16.dp))
                                 Spacer(Modifier.width(6.dp))
@@ -340,40 +363,66 @@ fun SetupWizardDialog(
                                     selected = totalPlanGB == gbVal,
                                     onClick = { totalPlanGB = gbVal },
                                     label = {
-                                        Text(
-                                            text = "$gbVal GB",
-                                            fontSize = 12.sp,
-                                            fontWeight = if (totalPlanGB == gbVal) FontWeight.Bold else FontWeight.Normal,
-                                            maxLines = 1,
-                                            softWrap = false
-                                        )
-                                    },
-                                    leadingIcon = if (totalPlanGB == gbVal) {
-                                        {
-                                            Icon(
-                                                imageVector = Icons.Default.Check,
-                                                contentDescription = null,
-                                                modifier = Modifier.size(14.dp)
+                                        CompositionLocalProvider(LocalLayoutDirection provides LayoutDirection.Ltr) {
+                                            Text(
+                                                text = "$gbVal GB",
+                                                fontSize = 12.sp,
+                                                fontWeight = if (totalPlanGB == gbVal) FontWeight.Bold else FontWeight.Normal,
+                                                maxLines = 1,
+                                                softWrap = false
                                             )
                                         }
-                                    } else null,
-                                    colors = FilterChipDefaults.filterChipColors(
-                                        selectedContainerColor = Color(0xFF30D158).copy(alpha = 0.25f),
-                                        selectedLabelColor = Color(0xFF30D158),
-                                        selectedLeadingIconColor = Color(0xFF30D158)
-                                    ),
+                                    },
                                     shape = RoundedCornerShape(10.dp)
                                 )
                             }
                         }
 
-                        OutlinedTextField(
-                            value = totalPlanGB,
-                            onValueChange = { totalPlanGB = it },
-                            label = { Text("سعة الباقة الإجمالية (GB)") },
-                            singleLine = true,
-                            modifier = Modifier.fillMaxWidth()
-                        )
+                        CompositionLocalProvider(LocalLayoutDirection provides LayoutDirection.Ltr) {
+                            OutlinedTextField(
+                                value = totalPlanGB,
+                                onValueChange = { totalPlanGB = it },
+                                label = { Text("سعة الباقة الإجمالية (GB)") },
+                                singleLine = true,
+                                keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number, imeAction = ImeAction.Done),
+                                keyboardActions = KeyboardActions(onDone = { focusManager.clearFocus() }),
+                                modifier = Modifier.fillMaxWidth()
+                            )
+                        }
+                    }
+
+                    // ================= الخطوة 4: دورة التجديد والاستهلاك المبدئي =================
+                    3 -> {
+                        Text("الخطوة 4: دورة التجديد والاستهلاك الحالي", fontWeight = FontWeight.Bold, fontSize = 13.sp)
+                        Text("حدد موعد تجديد باقتك الشهري، واستهلاكك التقريبي إذا كنت في منتصف الشهر:", fontSize = 11.sp, color = Color.Gray)
+
+                        CompositionLocalProvider(LocalLayoutDirection provides LayoutDirection.Ltr) {
+                            OutlinedTextField(
+                                value = renewalDayText,
+                                onValueChange = {
+                                    val num = it.filter { ch -> ch.isDigit() }
+                                    if (num.isEmpty() || (num.toIntOrNull() in 1..31)) {
+                                        renewalDayText = num
+                                    }
+                                },
+                                label = { Text("يوم تجديد الباقة شهرياً (1 - 31)") },
+                                singleLine = true,
+                                keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number, imeAction = ImeAction.Next),
+                                modifier = Modifier.fillMaxWidth()
+                            )
+                        }
+
+                        CompositionLocalProvider(LocalLayoutDirection provides LayoutDirection.Ltr) {
+                            OutlinedTextField(
+                                value = manualOffsetGBText,
+                                onValueChange = { manualOffsetGBText = it },
+                                label = { Text("استهلاكك المبدئي حتى الآن (GB) - اختياري") },
+                                singleLine = true,
+                                keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal, imeAction = ImeAction.Done),
+                                keyboardActions = KeyboardActions(onDone = { focusManager.clearFocus() }),
+                                modifier = Modifier.fillMaxWidth()
+                            )
+                        }
 
                         Card(
                             modifier = Modifier.fillMaxWidth(),
@@ -381,9 +430,15 @@ fun SetupWizardDialog(
                             shape = RoundedCornerShape(12.dp)
                         ) {
                             Column(modifier = Modifier.padding(12.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
-                                Text("جاهز للانطلاق", fontWeight = FontWeight.Bold, fontSize = 12.sp, color = Color.White)
-                                Text("الراوتر: $routerName ($routerIP)", fontSize = 11.sp, color = Color(0xFFCCCCCC))
-                                Text("سعة الباقة: $totalPlanGB GB", fontSize = 11.sp, color = Color(0xFFCCCCCC))
+                                Text("ملخص إعدادات الراوتر", fontWeight = FontWeight.Bold, fontSize = 12.sp, color = Color.White)
+                                Text("الاسم: $routerName", fontSize = 11.sp, color = Color(0xFFCCCCCC))
+                                CompositionLocalProvider(LocalLayoutDirection provides LayoutDirection.Ltr) {
+                                    Text("IP: $routerIP", fontSize = 11.sp, color = Color(0xFFCCCCCC))
+                                }
+                                Text("الباقة: $totalPlanGB GB (تجديد يوم ${renewalDayText.ifEmpty { "1" }})", fontSize = 11.sp, color = Color(0xFFCCCCCC))
+                                if ((manualOffsetGBText.toDoubleOrNull() ?: 0.0) > 0.0) {
+                                    Text("الاستهلاك الحالي المبدئي: $manualOffsetGBText GB", fontSize = 11.sp, color = Color(0xFFCCCCCC))
+                                }
                             }
                         }
                     }
@@ -393,7 +448,7 @@ fun SetupWizardDialog(
         confirmButton = {
             Button(
                 onClick = {
-                    if (currentStep < 2) {
+                    if (currentStep < 3) {
                         currentStep += 1
                     } else {
                         // إنهاء وحفظ مع الحفاظ الصارم على عنوان IP والبيانات التي حددها المستخدم
@@ -402,6 +457,8 @@ fun SetupWizardDialog(
                         val trimmedUser = username.trim().ifEmpty { "admin" }
                         val trimmedPass = password.trim()
                         val planGB = totalPlanGB.toDoubleOrNull() ?: 140.0
+                        val rDay = renewalDayText.toIntOrNull()?.coerceIn(1, 31) ?: 1
+                        val offsetGB = manualOffsetGBText.toDoubleOrNull() ?: 0.0
 
                         var finalProfile = initialRouter.copy(
                             name = trimmedName,
@@ -409,7 +466,9 @@ fun SetupWizardDialog(
                             username = trimmedUser,
                             password = trimmedPass,
                             firmware = firmware,
-                            totalPlanGB = planGB
+                            totalPlanGB = planGB,
+                            renewalDay = rDay,
+                            manualOffsetGB = offsetGB
                         )
 
                         // تطبيق القالب الجاهز لضبط محددات الـ No-Code فقط دون تجاوز عنوان IP ومواصفات المستخدم
@@ -420,7 +479,9 @@ fun SetupWizardDialog(
                                     routerIP = trimmedIP,
                                     username = trimmedUser,
                                     password = trimmedPass,
-                                    totalPlanGB = planGB
+                                    totalPlanGB = planGB,
+                                    renewalDay = rDay,
+                                    manualOffsetGB = offsetGB
                                 )
                             }
                         }
@@ -429,12 +490,12 @@ fun SetupWizardDialog(
                     }
                 },
                 colors = ButtonDefaults.buttonColors(
-                    containerColor = if (currentStep == 2) Color(0xFF30D158) else Color(0xFF0A84FF)
+                    containerColor = if (currentStep == 3) Color(0xFF30D158) else Color(0xFF0A84FF)
                 )
             ) {
                 Text(
-                    if (currentStep == 2) "حفظ وبدء الاستخدام" else "التالي",
-                    color = if (currentStep == 2) Color.Black else Color.White,
+                    if (currentStep == 3) "حفظ وبدء الاستخدام" else "التالي",
+                    color = if (currentStep == 3) Color.Black else Color.White,
                     fontWeight = FontWeight.Bold
                 )
             }
@@ -443,7 +504,7 @@ fun SetupWizardDialog(
             if (currentStep > 0) {
                 TextButton(onClick = { currentStep -= 1 }) {
                     Row(verticalAlignment = Alignment.CenterVertically) {
-                        Icon(Icons.Default.ChevronRight, contentDescription = null, modifier = Modifier.size(16.dp))
+                        Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = null, modifier = Modifier.size(16.dp))
                         Spacer(Modifier.width(2.dp))
                         Text("السابق")
                     }

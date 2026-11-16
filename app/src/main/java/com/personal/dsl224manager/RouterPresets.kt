@@ -57,7 +57,7 @@ object RouterPresetsManager {
             firmware = FirmwareType.ME110_BOA,
             description = "راوتر D-Link DSL-224 بنظام Boa الافتراضي (WE / فودافون / أورنج)",
             webUIPath = "",
-            customUsageSelector = "td:contains('WAN'), .traffic-stat, td:contains('Bytes')",
+            customUsageSelector = "#wan_bytes, .traffic-stat, td.bytes_val, table.status_table td",
             customUsageRegex = """(\d{7,16})""",
             customUsageUnit = "Bytes",
             customDeviceTableSelector = "#dhcp_client_table, tr.device-row, table.status_table",

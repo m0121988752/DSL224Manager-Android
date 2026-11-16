@@ -41,7 +41,8 @@ android {
             }
         }
         release {
-            isMinifyEnabled = false
+            isMinifyEnabled = true
+            isShrinkResources = true
             if (hasKeystore && releaseStorePassword.isNotEmpty()) {
                 signingConfig = signingConfigs.getByName("release")
             }

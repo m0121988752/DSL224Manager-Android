@@ -22,8 +22,15 @@ import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.*
+import androidx.compose.material.icons.automirrored.filled.*
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
+import androidx.compose.runtime.saveable.rememberSaveable
+import androidx.compose.foundation.text.KeyboardOptions
+import androidx.compose.foundation.text.KeyboardActions
+import androidx.compose.ui.text.input.KeyboardType
+import androidx.compose.ui.text.input.ImeAction
+import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -112,6 +119,19 @@ fun MainScreen(repo: RouterRepository) {
     // معالج الإعداد التلقائي وقائمة الأدوات العلوية
     var showSetupWizardDialog by remember { mutableStateOf(!storage.hasCompletedWizard()) }
     var showTopMenu by remember { mutableStateOf(false) }
+
+    // حوارات التأكيد والإضافة اليدوية والمعايرة
+    var showRebootConfirmDialog by remember { mutableStateOf(false) }
+    var routerIndexToDelete by remember { mutableStateOf<Int?>(null) }
+    var showAddDeviceDialog by remember { mutableStateOf(false) }
+    var showCalibrateDialog by remember { mutableStateOf(false) }
+
+    // تنظيف موارد المتصفح عند إغلاق الشاشة
+    DisposableEffect(Unit) {
+        onDispose {
+            webUI.destroy()
+        }
+    }
 
     fun log(msg: String) {
         logs = listOf(msg) + logs.take(60)
@@ -245,14 +265,7 @@ fun MainScreen(repo: RouterRepository) {
                                 text = { Text("إعادة تشغيل الراوتر (Reboot)", color = MaterialTheme.colorScheme.error, fontWeight = FontWeight.Bold) },
                                 onClick = {
                                     showTopMenu = false
-                                    scope.launch {
-                                        log("جاري إرسال أمر إعادة التشغيل (Reboot) للراوتر...")
-                                        val (ok, msg) = webUI.pressButton(
-                                            selector = activeRouter.customRebootButtonSelector.takeIf { it.isNotBlank() },
-                                            semanticAction = SemanticButtonAction.REBOOT
-                                        )
-                                        log(if (ok) "[نجاح] $msg" else "[خطأ] $msg")
-                                    }
+                                    showRebootConfirmDialog = true
                                 },
                                 leadingIcon = { Icon(Icons.Default.PowerSettingsNew, contentDescription = null, tint = MaterialTheme.colorScheme.error) }
                             )
@@ -297,16 +310,10 @@ fun MainScreen(repo: RouterRepository) {
                     isLoading = isLoading,
                     onToggleBlock = { dev, block ->
                         scope.launch {
-                            // 1. تحديث الحالة فورياً في الواجهة (Optimistic UI Update) لسرعة الاستجابة
-                            val updatedDevs = activeRouter.devices.map {
-                                if (it.macAddress.equals(dev.macAddress, ignoreCase = true)) it.copy(isBlocked = block) else it
-                            }
-                            updateActiveRouter(activeRouter.copy(devices = updatedDevs))
-
-                            // 2. إرسال أمر الحظر للراوتر
-                            val ok = repo.toggleBlockDevice(activeRouter, dev, block) { log(it) }
-                            if (!ok) {
-                                // التراجع عن الحالة إذا فشل الأمر في الراوتر
+                            val (ok, updatedProfile) = repo.toggleBlockDevice(activeRouter, dev, block) { log(it) }
+                            if (ok) {
+                                updateActiveRouter(updatedProfile)
+                            } else {
                                 val revertedDevs = activeRouter.devices.map {
                                     if (it.macAddress.equals(dev.macAddress, ignoreCase = true)) it.copy(isBlocked = !block) else it
                                 }
@@ -329,15 +336,16 @@ fun MainScreen(repo: RouterRepository) {
                     },
                     onOpenWizard = { showSetupWizardDialog = true },
                     onOpenNoCode = { showNoCodeDialog = true },
-                    onReboot = {
+                    onOpenCalibrate = { showCalibrateDialog = true },
+                    onAddDeviceManually = { showAddDeviceDialog = true },
+                    onSetThrottle = { dev, speedKbps ->
                         scope.launch {
-                            log("جاري إرسال أمر إعادة التشغيل (Reboot) للراوتر...")
-                            val (ok, msg) = webUI.pressButton(
-                                selector = activeRouter.customRebootButtonSelector.takeIf { it.isNotBlank() },
-                                semanticAction = SemanticButtonAction.REBOOT
-                            )
-                            log(if (ok) "[نجاح] $msg" else "[خطأ] $msg")
+                            val updated = repo.setThrottle(activeRouter, dev, speedKbps) { log(it) }
+                            updateActiveRouter(updated)
                         }
+                    },
+                    onReboot = {
+                        showRebootConfirmDialog = true
                     },
                     onFastChangeNetMode = { newMode ->
                         val modeName = when (newMode) {
@@ -350,11 +358,12 @@ fun MainScreen(repo: RouterRepository) {
                         updateActiveRouter(updated)
 
                         scope.launch {
-                            val ok = repo.setHuaweiNetMode(updated, newMode) { msg -> log(msg) }
+                            val (ok, updatedProfile) = repo.setHuaweiNetMode(updated, newMode) { msg -> log(msg) }
                             if (!ok) {
                                 repo.fetchHuaweiNetMode(updated) { msg -> log(msg) }
+                            } else {
+                                updateActiveRouter(updatedProfile)
                             }
-                            updateActiveRouter(updated)
                         }
                     }
                 )
@@ -387,10 +396,7 @@ fun MainScreen(repo: RouterRepository) {
                     },
                     onDeleteRouter = { idx ->
                         if (routers.size > 1) {
-                            routers = routers.filterIndexed { i, _ -> i != idx }
-                            if (activeRouterIndex >= routers.size) activeRouterIndex = routers.lastIndex
-                            storage.saveRouters(routers, activeRouterIndex)
-                            log("تم حذف الراوتر")
+                            routerIndexToDelete = idx
                         }
                     }
                 )
@@ -445,12 +451,15 @@ fun MainScreen(repo: RouterRepository) {
             text = {
                 Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
                     Text("الاسم الأصلي: ${editingDevice?.originalHostname ?: "غير معروف"}", fontSize = 12.sp, color = Color.Gray)
-                    Text("MAC: ${editingDevice?.macAddress}", fontSize = 11.sp, color = Color.Gray)
+                    CompositionLocalProvider(LocalLayoutDirection provides LayoutDirection.Ltr) {
+                        Text("MAC: ${editingDevice?.macAddress}", fontSize = 11.sp, color = Color.Gray)
+                    }
                     OutlinedTextField(
                         value = newCustomName,
                         onValueChange = { newCustomName = it },
                         label = { Text("الاسم المخصص") },
                         singleLine = true,
+                        keyboardOptions = KeyboardOptions(imeAction = ImeAction.Done),
                         modifier = Modifier.fillMaxWidth()
                     )
                 }
@@ -473,6 +482,204 @@ fun MainScreen(repo: RouterRepository) {
             },
             dismissButton = {
                 TextButton(onClick = { editingDevice = null }) {
+                    Text("إلغاء")
+                }
+            }
+        )
+    }
+
+    // حوار تأكيد إعادة تشغيل الراوتر
+    if (showRebootConfirmDialog) {
+        AlertDialog(
+            onDismissRequest = { showRebootConfirmDialog = false },
+            title = { Text("إعادة تشغيل الراوتر", fontWeight = FontWeight.Bold) },
+            text = { Text("هل أنت متأكد من رغبتك في إعادة تشغيل الراوتر؟ سيؤدي ذلك لانقطاع الاتصال مؤقتاً لبضع دقائق.") },
+            confirmButton = {
+                Button(
+                    onClick = {
+                        showRebootConfirmDialog = false
+                        scope.launch {
+                            log("جاري إرسال أمر إعادة التشغيل (Reboot) للراوتر...")
+                            val (ok, msg) = webUI.pressButton(
+                                selector = activeRouter.customRebootButtonSelector.takeIf { it.isNotBlank() },
+                                semanticAction = SemanticButtonAction.REBOOT
+                            )
+                            log(if (ok) "[نجاح] $msg" else "[خطأ] $msg")
+                        }
+                    },
+                    colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.error)
+                ) {
+                    Text("إعادة التشغيل الآن")
+                }
+            },
+            dismissButton = {
+                TextButton(onClick = { showRebootConfirmDialog = false }) {
+                    Text("إلغاء")
+                }
+            }
+        )
+    }
+
+    // حوار تأكيد حذف الراوتر
+    if (routerIndexToDelete != null) {
+        val targetIdx = routerIndexToDelete!!
+        val targetRouterName = routers.getOrNull(targetIdx)?.name ?: "الراوتر"
+        AlertDialog(
+            onDismissRequest = { routerIndexToDelete = null },
+            title = { Text("حذف ملف الراوتر", fontWeight = FontWeight.Bold) },
+            text = { Text("هل أنت متأكد من حذف ($targetRouterName)؟ لن تتمكن من التراجع عن هذه الخطوة.") },
+            confirmButton = {
+                Button(
+                    onClick = {
+                        if (routers.size > 1 && targetIdx in routers.indices) {
+                            routers = routers.filterIndexed { i, _ -> i != targetIdx }
+                            if (activeRouterIndex >= routers.size) activeRouterIndex = routers.lastIndex
+                            storage.saveRouters(routers, activeRouterIndex)
+                            log("تم حذف ملف الراوتر بنجاح")
+                        }
+                        routerIndexToDelete = null
+                    },
+                    colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.error)
+                ) {
+                    Text("تأكيد الحذف")
+                }
+            },
+            dismissButton = {
+                TextButton(onClick = { routerIndexToDelete = null }) {
+                    Text("إلغاء")
+                }
+            }
+        )
+    }
+
+    // حوار إضافة جهاز يدوياً
+    if (showAddDeviceDialog) {
+        var devName by remember { mutableStateOf("") }
+        var devIP by remember { mutableStateOf("") }
+        var devMAC by remember { mutableStateOf("") }
+        var isTrustedDev by remember { mutableStateOf(false) }
+
+        AlertDialog(
+            onDismissRequest = { showAddDeviceDialog = false },
+            title = { Text("إضافة جهاز يدوياً", fontWeight = FontWeight.Bold) },
+            text = {
+                Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                    OutlinedTextField(
+                        value = devName,
+                        onValueChange = { devName = it },
+                        label = { Text("اسم الجهاز") },
+                        singleLine = true,
+                        keyboardOptions = KeyboardOptions(imeAction = ImeAction.Next),
+                        modifier = Modifier.fillMaxWidth()
+                    )
+                    CompositionLocalProvider(LocalLayoutDirection provides LayoutDirection.Ltr) {
+                        OutlinedTextField(
+                            value = devIP,
+                            onValueChange = { devIP = it },
+                            label = { Text("عنوان IP") },
+                            singleLine = true,
+                            keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Ascii, imeAction = ImeAction.Next),
+                            modifier = Modifier.fillMaxWidth()
+                        )
+                    }
+                    CompositionLocalProvider(LocalLayoutDirection provides LayoutDirection.Ltr) {
+                        OutlinedTextField(
+                            value = devMAC,
+                            onValueChange = { devMAC = it },
+                            label = { Text("عنوان MAC (مثال: AA:BB:CC:DD:EE:FF)") },
+                            singleLine = true,
+                            keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Ascii, imeAction = ImeAction.Done),
+                            modifier = Modifier.fillMaxWidth()
+                        )
+                    }
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        Checkbox(checked = isTrustedDev, onCheckedChange = { isTrustedDev = it })
+                        Spacer(Modifier.width(6.dp))
+                        Text("جهاز موثوق ومعتمد", fontSize = 12.sp)
+                    }
+                }
+            },
+            confirmButton = {
+                Button(
+                    onClick = {
+                        val cleanMac = devMAC.trim().replace("-", ":").uppercase()
+                        if (cleanMac.length >= 11) {
+                            val newDev = NetworkDevice(
+                                ipAddress = devIP.trim(),
+                                macAddress = cleanMac,
+                                customName = devName.trim(),
+                                isOnline = true,
+                                isTrusted = isTrustedDev
+                            )
+                            val currentMap = activeRouter.devices.associateBy { it.macAddress.replace("-", ":").uppercase() }.toMutableMap()
+                            currentMap[cleanMac] = newDev
+                            updateActiveRouter(activeRouter.copy(devices = currentMap.values.toList()))
+                            log("تمت إضافة الجهاز (${newDev.displayName}) يدوياً")
+                            showAddDeviceDialog = false
+                        }
+                    },
+                    enabled = devMAC.isNotBlank()
+                ) {
+                    Text("إضافة")
+                }
+            },
+            dismissButton = {
+                TextButton(onClick = { showAddDeviceDialog = false }) {
+                    Text("إلغاء")
+                }
+            }
+        )
+    }
+
+    // حوار ضبط ومعايرة الاستهلاك
+    if (showCalibrateDialog) {
+        var offsetText by remember { mutableStateOf(activeRouter.manualOffsetGB.toString()) }
+        var renewalText by remember { mutableStateOf(activeRouter.renewalDay.toString()) }
+
+        AlertDialog(
+            onDismissRequest = { showCalibrateDialog = false },
+            title = { Text("ضبط ومعايرة الاستهلاك", fontWeight = FontWeight.Bold) },
+            text = {
+                Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                    Text("قم بضبط الاستهلاك الإضافي إذا كان عداد الراوتر أقل من استهلاك الشركة الحقيقي:", fontSize = 11.sp, color = Color.Gray)
+                    CompositionLocalProvider(LocalLayoutDirection provides LayoutDirection.Ltr) {
+                        OutlinedTextField(
+                            value = offsetText,
+                            onValueChange = { offsetText = it },
+                            label = { Text("الاستهلاك الإضافي الميداني (GB)") },
+                            singleLine = true,
+                            keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal, imeAction = ImeAction.Next),
+                            modifier = Modifier.fillMaxWidth()
+                        )
+                    }
+                    CompositionLocalProvider(LocalLayoutDirection provides LayoutDirection.Ltr) {
+                        OutlinedTextField(
+                            value = renewalText,
+                            onValueChange = { renewalText = it.filter { ch -> ch.isDigit() } },
+                            label = { Text("يوم تجديد الباقة شهرياً (1-31)") },
+                            singleLine = true,
+                            keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number, imeAction = ImeAction.Done),
+                            modifier = Modifier.fillMaxWidth()
+                        )
+                    }
+                }
+            },
+            confirmButton = {
+                Button(
+                    onClick = {
+                        val offsetVal = offsetText.toDoubleOrNull() ?: activeRouter.manualOffsetGB
+                        val dayVal = renewalText.toIntOrNull()?.coerceIn(1, 31) ?: activeRouter.renewalDay
+                        val updated = activeRouter.copy(manualOffsetGB = offsetVal, renewalDay = dayVal)
+                        updateActiveRouter(updated)
+                        log("تم تحديث إعدادات دورة الباقة ومعايرة الاستهلاك")
+                        showCalibrateDialog = false
+                    }
+                ) {
+                    Text("حفظ")
+                }
+            },
+            dismissButton = {
+                TextButton(onClick = { showCalibrateDialog = false }) {
                     Text("إلغاء")
                 }
             }
@@ -853,10 +1060,13 @@ fun DashboardTab(
     onOpenWizard: () -> Unit,
     onOpenNoCode: () -> Unit,
     onReboot: () -> Unit,
-    onFastChangeNetMode: ((String) -> Unit)? = null
+    onFastChangeNetMode: ((String) -> Unit)? = null,
+    onOpenCalibrate: () -> Unit = {},
+    onAddDeviceManually: () -> Unit = {},
+    onSetThrottle: ((NetworkDevice, Int?) -> Unit)? = null
 ) {
-    var searchQuery by remember { mutableStateOf("") }
-    var filterMode by remember { mutableStateOf(0) } // 0: الكل, 1: متصل, 2: محظور
+    var searchQuery by rememberSaveable { mutableStateOf("") }
+    var filterMode by rememberSaveable { mutableStateOf(0) } // 0: الكل, 1: متصل, 2: محظور, 3: محدد السرعة
 
     val filteredDevices = remember(router.devices, searchQuery, filterMode) {
         router.devices.filter { dev ->
@@ -868,6 +1078,7 @@ fun DashboardTab(
             val matchesFilter = when (filterMode) {
                 1 -> dev.isOnline && !dev.isBlocked
                 2 -> dev.isBlocked
+                3 -> dev.isThrottled
                 else -> true
             }
             matchesSearch && matchesFilter
@@ -916,13 +1127,19 @@ fun DashboardTab(
                             }
                         }
 
-                        // نسبة الاستهلاك
-                        Text(
-                            "${String.format(java.util.Locale.US, "%.1f", router.usedPercentage)}%",
-                            fontWeight = FontWeight.ExtraBold,
-                            fontSize = 18.sp,
-                            color = if (router.usedPercentage > 85) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.primary
-                        )
+                        // نسبة الاستهلاك مع زر ضبط ومعايرة الاستهلاك
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            Text(
+                                "${String.format(java.util.Locale.US, "%.1f", router.usedPercentage)}%",
+                                fontWeight = FontWeight.ExtraBold,
+                                fontSize = 18.sp,
+                                color = if (router.usedPercentage > 85) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.primary
+                            )
+                            Spacer(Modifier.width(6.dp))
+                            IconButton(onClick = onOpenCalibrate, modifier = Modifier.size(24.dp)) {
+                                Icon(Icons.Default.Tune, contentDescription = "معايرة الاستهلاك", tint = Color.Gray, modifier = Modifier.size(16.dp))
+                            }
+                        }
                     }
 
                     Spacer(Modifier.height(16.dp))
@@ -973,7 +1190,25 @@ fun DashboardTab(
                         trackColor = MaterialTheme.colorScheme.surfaceVariant
                     )
 
-                    // السرعات اللحظية للرفع والتحميل (معروضة دائماً وبشكل بارز وأنيق)
+                    // تفاصيل دورة التجديد والمعدل الموصى به يومياً
+                    Row(
+                        modifier = Modifier.fillMaxWidth().padding(top = 6.dp),
+                        horizontalArrangement = Arrangement.SpaceBetween
+                    ) {
+                        Text(
+                            "التجديد: بعد ${router.daysUntilRenewal} يوم (يوم ${router.renewalDay})",
+                            fontSize = 10.sp,
+                            color = Color.Gray
+                        )
+                        Text(
+                            "الموصى به: ${String.format(java.util.Locale.US, "%.1f", router.recommendedDailyGB)} GB/يوم",
+                            fontSize = 10.sp,
+                            color = Color(0xFF30D158),
+                            fontWeight = FontWeight.SemiBold
+                        )
+                    }
+
+                    // السرعات اللحظية للرفع والتحميل
                     Spacer(Modifier.height(14.dp))
                     Row(
                         modifier = Modifier
@@ -1192,29 +1427,64 @@ fun DashboardTab(
 
         // شرائح الفلترة (Filter Chips)
         item {
-            Row(
+            LazyRow(
                 modifier = Modifier.fillMaxWidth(),
                 horizontalArrangement = Arrangement.spacedBy(8.dp)
             ) {
-                FilterChip(
-                    selected = filterMode == 0,
-                    onClick = { filterMode = 0 },
-                    label = { Text("الكل (${router.devices.size})") }
-                )
-                FilterChip(
-                    selected = filterMode == 1,
-                    onClick = { filterMode = 1 },
-                    label = { Text("المتصلة (${router.devices.count { it.isOnline && !it.isBlocked }})") }
-                )
-                FilterChip(
-                    selected = filterMode == 2,
-                    onClick = { filterMode = 2 },
-                    label = { Text("المحظورة (${router.devices.count { it.isBlocked }})") },
-                    colors = FilterChipDefaults.filterChipColors(
-                        selectedContainerColor = MaterialTheme.colorScheme.error.copy(alpha = 0.2f),
-                        selectedLabelColor = MaterialTheme.colorScheme.error
+                item {
+                    FilterChip(
+                        selected = filterMode == 0,
+                        onClick = { filterMode = 0 },
+                        label = { Text("الكل (${router.devices.size})") }
                     )
-                )
+                }
+                item {
+                    FilterChip(
+                        selected = filterMode == 1,
+                        onClick = { filterMode = 1 },
+                        label = { Text("المتصلة (${router.devices.count { it.isOnline && !it.isBlocked }})") }
+                    )
+                }
+                item {
+                    FilterChip(
+                        selected = filterMode == 2,
+                        onClick = { filterMode = 2 },
+                        label = { Text("المحظورة (${router.devices.count { it.isBlocked }})") },
+                        colors = FilterChipDefaults.filterChipColors(
+                            selectedContainerColor = MaterialTheme.colorScheme.error.copy(alpha = 0.2f),
+                            selectedLabelColor = MaterialTheme.colorScheme.error
+                        )
+                    )
+                }
+                if (router.firmware != FirmwareType.HUAWEI_B311) {
+                    item {
+                        FilterChip(
+                            selected = filterMode == 3,
+                            onClick = { filterMode = 3 },
+                            label = { Text("محددة السرعة (${router.devices.count { it.isThrottled }})") },
+                            colors = FilterChipDefaults.filterChipColors(
+                                selectedContainerColor = Color(0xFF0A84FF).copy(alpha = 0.2f),
+                                selectedLabelColor = Color(0xFF0A84FF)
+                            )
+                        )
+                    }
+                }
+            }
+        }
+
+        // عنوان قسم الأجهزة وزر إضافة جهاز يدوياً
+        item {
+            Row(
+                modifier = Modifier.fillMaxWidth().padding(horizontal = 4.dp),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Text("قائمة الأجهزة (${filteredDevices.size})", fontWeight = FontWeight.Bold, fontSize = 13.sp)
+                TextButton(onClick = onAddDeviceManually) {
+                    Icon(Icons.Default.Add, contentDescription = null, modifier = Modifier.size(16.dp), tint = MaterialTheme.colorScheme.primary)
+                    Spacer(Modifier.width(4.dp))
+                    Text("إضافة جهاز يدوياً", fontSize = 11.sp, fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.primary)
+                }
             }
         }
 
@@ -1268,70 +1538,116 @@ fun DashboardTab(
                 items = filteredDevices,
                 key = { it.macAddress }
             ) { dev ->
+                val cardAlpha = if (!dev.isOnline && !dev.isBlocked) 0.65f else 1.0f
+                val statusColor = when {
+                    dev.isBlocked -> MaterialTheme.colorScheme.error
+                    dev.isOnline -> MaterialTheme.colorScheme.secondary
+                    else -> Color(0xFF8E8E93)
+                }
+
                 Card(
-                    modifier = Modifier.fillMaxWidth(),
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .alpha(cardAlpha),
                     shape = RoundedCornerShape(14.dp),
                     colors = CardDefaults.cardColors(
                         containerColor = if (dev.isBlocked) Color(0xFF2C1517) else MaterialTheme.colorScheme.surface
                     )
                 ) {
-                    Row(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .padding(14.dp),
-                        verticalAlignment = Alignment.CenterVertically,
-                        horizontalArrangement = Arrangement.SpaceBetween
-                    ) {
-                        Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.weight(1f)) {
-                            // مؤشر الحالة (أخضر متصل / أحمر محظور)
-                            Box(
-                                modifier = Modifier
-                                    .size(10.dp)
-                                    .clip(CircleShape)
-                                    .background(if (dev.isBlocked) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.secondary)
-                            )
-                            Spacer(Modifier.width(12.dp))
-                            Column {
-                                Row(verticalAlignment = Alignment.CenterVertically) {
-                                    Text(
-                                        dev.displayName,
-                                        fontWeight = FontWeight.Bold,
-                                        fontSize = 14.sp,
-                                        color = if (dev.isBlocked) MaterialTheme.colorScheme.error else Color.White
-                                    )
-                                    Spacer(Modifier.width(4.dp))
-                                    IconButton(
-                                        onClick = { onRenameDevice(dev) },
-                                        modifier = Modifier.size(18.dp)
-                                    ) {
-                                        Icon(Icons.Default.Edit, contentDescription = "تعديل الاسم", tint = Color.Gray, modifier = Modifier.size(13.dp))
+                    Column(modifier = Modifier.padding(14.dp)) {
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.SpaceBetween
+                        ) {
+                            Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.weight(1f)) {
+                                // مؤشر الحالة (أخضر متصل / أحمر محظور / رمادي غير متصل)
+                                Box(
+                                    modifier = Modifier
+                                        .size(10.dp)
+                                        .clip(CircleShape)
+                                        .background(statusColor)
+                                )
+                                Spacer(Modifier.width(12.dp))
+                                Column {
+                                    Row(verticalAlignment = Alignment.CenterVertically) {
+                                        Text(
+                                            dev.displayName,
+                                            fontWeight = FontWeight.Bold,
+                                            fontSize = 14.sp,
+                                            color = if (dev.isBlocked) MaterialTheme.colorScheme.error else Color.White
+                                        )
+                                        if (dev.isTrusted) {
+                                            Spacer(Modifier.width(4.dp))
+                                            Icon(Icons.Default.VerifiedUser, contentDescription = "موثوق", tint = Color(0xFF30D158), modifier = Modifier.size(14.dp))
+                                        }
+                                        Spacer(Modifier.width(4.dp))
+                                        IconButton(
+                                            onClick = { onRenameDevice(dev) },
+                                            modifier = Modifier.size(18.dp)
+                                        ) {
+                                            Icon(Icons.Default.Edit, contentDescription = "تعديل الاسم", tint = Color.Gray, modifier = Modifier.size(13.dp))
+                                        }
+                                    }
+                                    Spacer(Modifier.height(2.dp))
+                                    CompositionLocalProvider(LocalLayoutDirection provides LayoutDirection.Ltr) {
+                                        Text(
+                                            "${if (dev.ipAddress.isNotBlank()) dev.ipAddress else "غير متصل"} • ${dev.macAddress}",
+                                            fontSize = 11.sp,
+                                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                                        )
                                     }
                                 }
-                                Spacer(Modifier.height(2.dp))
-                                Text(
-                                    "${dev.ipAddress} • ${dev.macAddress}",
-                                    fontSize = 11.sp,
-                                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                            }
+
+                            // زر الحظر / إلغاء الحظر التفاعلي المباشر
+                            Button(
+                                onClick = { onToggleBlock(dev, !dev.isBlocked) },
+                                colors = ButtonDefaults.buttonColors(
+                                    containerColor = if (dev.isBlocked) MaterialTheme.colorScheme.secondary else MaterialTheme.colorScheme.error
+                                ),
+                                shape = RoundedCornerShape(8.dp),
+                                contentPadding = PaddingValues(horizontal = 12.dp, vertical = 6.dp)
+                            ) {
+                                Icon(
+                                    if (dev.isBlocked) Icons.Default.CheckCircle else Icons.Default.Block,
+                                    contentDescription = null,
+                                    modifier = Modifier.size(14.dp)
                                 )
+                                Spacer(Modifier.width(6.dp))
+                                Text(if (dev.isBlocked) "إلغاء الحظر" else "حظر", fontSize = 11.sp, fontWeight = FontWeight.Bold)
                             }
                         }
 
-                        // زر الحظر / إلغاء الحظر التفاعلي المباشر
-                        Button(
-                            onClick = { onToggleBlock(dev, !dev.isBlocked) },
-                            colors = ButtonDefaults.buttonColors(
-                                containerColor = if (dev.isBlocked) MaterialTheme.colorScheme.secondary else MaterialTheme.colorScheme.error
-                            ),
-                            shape = RoundedCornerShape(8.dp),
-                            contentPadding = PaddingValues(horizontal = 12.dp, vertical = 6.dp)
-                        ) {
-                            Icon(
-                                if (dev.isBlocked) Icons.Default.CheckCircle else Icons.Default.Block,
-                                contentDescription = null,
-                                modifier = Modifier.size(14.dp)
-                            )
-                            Spacer(Modifier.width(6.dp))
-                            Text(if (dev.isBlocked) "إلغاء الحظر" else "حظر", fontSize = 11.sp, fontWeight = FontWeight.Bold)
+                        // شرائح تحديد السرعة (Bandwidth Throttling) لراوترات D-Link و Realtek
+                        if (router.firmware != FirmwareType.HUAWEI_B311) {
+                            Spacer(Modifier.height(8.dp))
+                            HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.2f), thickness = 0.5.dp)
+                            Spacer(Modifier.height(6.dp))
+                            Row(
+                                modifier = Modifier.fillMaxWidth(),
+                                horizontalArrangement = Arrangement.spacedBy(6.dp),
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                Text("تحديد السرعة:", fontSize = 10.sp, color = Color.Gray)
+                                val throttleOptions = listOf(
+                                    Pair(256, "256K"),
+                                    Pair(512, "512K"),
+                                    Pair(1024, "1M"),
+                                    Pair(2048, "2M"),
+                                    Pair(null, "كاملة")
+                                )
+                                throttleOptions.forEach { (rateKbps, label) ->
+                                    val isCurrent = if (rateKbps == null) !dev.isThrottled else (dev.isThrottled && dev.currentSpeedKbps == rateKbps)
+                                    FilterChip(
+                                        selected = isCurrent,
+                                        onClick = { onSetThrottle?.invoke(dev, rateKbps) },
+                                        label = { Text(label, fontSize = 10.sp) },
+                                        shape = RoundedCornerShape(8.dp),
+                                        modifier = Modifier.height(26.dp)
+                                    )
+                                }
+                            }
                         }
                     }
                 }
@@ -2437,77 +2753,61 @@ fun RouterWebUIDialog(
         Scaffold(
             topBar = {
                 Column(modifier = Modifier.fillMaxWidth().background(Color(0xFF1C1C1E))) {
-                    // Toolbar
+                    // السطر الأول: زر الإغلاق وعنوان الصفحة وزر وضع الالتقاط
                     Row(
                         modifier = Modifier
                             .fillMaxWidth()
                             .padding(horizontal = 8.dp, vertical = 6.dp),
                         verticalAlignment = Alignment.CenterVertically,
-                        horizontalArrangement = Arrangement.spacedBy(4.dp)
+                        horizontalArrangement = Arrangement.spacedBy(6.dp)
                     ) {
                         IconButton(onClick = onDismiss) {
-                            Icon(Icons.Default.Close, contentDescription = "Close", tint = Color.White)
+                            Icon(Icons.Default.Close, contentDescription = "إغلاق", tint = Color.White)
                         }
 
-                        IconButton(
-                            onClick = { webViewRef?.goBack() },
-                            enabled = canGoBack
-                        ) {
-                            Icon(
-                                Icons.Default.ArrowForward,
-                                contentDescription = "Back",
-                                tint = if (canGoBack) Color.White else Color.Gray
-                            )
-                        }
-
-                        IconButton(
-                            onClick = { webViewRef?.goForward() },
-                            enabled = canGoForward
-                        ) {
-                            Icon(
-                                Icons.Default.ArrowBack,
-                                contentDescription = "Forward",
-                                tint = if (canGoForward) Color.White else Color.Gray
-                            )
-                        }
-
-                        IconButton(onClick = { webViewRef?.reload() }) {
-                            Icon(Icons.Default.Refresh, contentDescription = "Reload", tint = Color(0xFF0A84FF))
-                        }
-
-                        // Address bar
-                        OutlinedTextField(
-                            value = addressInput,
-                            onValueChange = { addressInput = it },
-                            modifier = Modifier
-                                .weight(1f)
-                                .height(46.dp),
-                            textStyle = androidx.compose.ui.text.TextStyle(fontSize = 12.sp, color = Color.White),
-                            singleLine = true,
-                            leadingIcon = {
-                                Icon(Icons.Default.Lock, contentDescription = null, tint = Color(0xFFFF9F0A), modifier = Modifier.size(14.dp))
-                            },
-                            trailingIcon = {
-                                IconButton(onClick = {
+                        CompositionLocalProvider(LocalLayoutDirection provides LayoutDirection.Ltr) {
+                            OutlinedTextField(
+                                value = addressInput,
+                                onValueChange = { addressInput = it },
+                                modifier = Modifier
+                                    .weight(1f)
+                                    .height(46.dp),
+                                textStyle = androidx.compose.ui.text.TextStyle(fontSize = 12.sp, color = Color.White),
+                                singleLine = true,
+                                keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Ascii, imeAction = ImeAction.Go),
+                                keyboardActions = KeyboardActions(onGo = {
                                     var clean = addressInput.trim()
                                     if (!clean.startsWith("http://") && !clean.startsWith("https://")) {
                                         clean = "http://$clean"
                                     }
                                     webViewRef?.loadUrl(clean)
-                                }) {
-                                    Icon(Icons.Default.ArrowCircleLeft, contentDescription = "Go", tint = Color(0xFF0A84FF), modifier = Modifier.size(18.dp))
+                                }),
+                                leadingIcon = {
+                                    Icon(Icons.Default.Lock, contentDescription = null, tint = Color(0xFFFF9F0A), modifier = Modifier.size(14.dp))
+                                },
+                                trailingIcon = {
+                                    IconButton(onClick = {
+                                        var clean = addressInput.trim()
+                                        if (!clean.startsWith("http://") && !clean.startsWith("https://")) {
+                                            clean = "http://$clean"
+                                        }
+                                        webViewRef?.loadUrl(clean)
+                                    }) {
+                                        Icon(Icons.AutoMirrored.Filled.ArrowForward, contentDescription = "انتقال", tint = Color(0xFF0A84FF), modifier = Modifier.size(18.dp))
+                                    }
                                 }
-                            }
-                        )
+                            )
+                        }
 
-                        // Visual Picker Mode Toggle
+                        // زر وضع الالتقاط البصري
                         Button(
                             onClick = { togglePicker() },
                             colors = ButtonDefaults.buttonColors(
                                 containerColor = if (isPickerActive) Color(0xFF30D158) else Color(0xFF2C2C2E)
                             ),
-                            contentPadding = PaddingValues(horizontal = 8.dp, vertical = 4.dp),
-                            modifier = Modifier.height(38.dp)
+                            contentPadding = PaddingValues(horizontal = 10.dp, vertical = 4.dp),
+                            shape = RoundedCornerShape(10.dp),
+                            modifier = Modifier.height(40.dp)
                         ) {
                             Icon(
                                 Icons.Default.Adjust,
@@ -2517,7 +2817,7 @@ fun RouterWebUIDialog(
                             )
                             Spacer(Modifier.width(4.dp))
                             Text(
-                                if (isPickerActive) "إلغاء الالتقاط" else "التقاط عنصر",
+                                if (isPickerActive) "إلغاء" else "التقاط",
                                 fontSize = 11.sp,
                                 color = if (isPickerActive) Color.Black else Color.White,
                                 fontWeight = FontWeight.Bold
@@ -2525,7 +2825,7 @@ fun RouterWebUIDialog(
                         }
                     }
 
-                    // Banner when picker mode is active
+                    // شريط إشعار وضع الالتقاط
                     if (isPickerActive) {
                         Row(
                             modifier = Modifier
@@ -2551,79 +2851,121 @@ fun RouterWebUIDialog(
                         }
                     }
 
-                    // Quick Actions Row
+                    // السطر الثاني: أزرار التنقل وإعادة التحميل وشريط الإجراءات السريعة
                     Row(
                         modifier = Modifier
                             .fillMaxWidth()
                             .background(Color(0xFF141416))
-                            .padding(horizontal = 10.dp, vertical = 4.dp),
-                        horizontalArrangement = Arrangement.spacedBy(6.dp)
+                            .padding(horizontal = 8.dp, vertical = 4.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(4.dp)
                     ) {
-                        // زر دخول تلقائي
-                        SuggestionChip(
-                            onClick = {
-                                scope.launch {
-                                    toastMessage = "جارِ تعبئة بيانات الدخول..."
-                                    val ok = webUI.attemptAutoLogin(router.username, router.password, router, webViewRef)
-                                    toastMessage = if (ok) "تم إرسال بيانات الدخول بنجاح" else "لم يتم العثور على حقول الدخول"
-                                }
-                            },
-                            label = { Text("دخول تلقائي", fontSize = 11.sp) },
-                            icon = { Icon(Icons.Default.Key, contentDescription = null, modifier = Modifier.size(14.dp), tint = Color(0xFF0A84FF)) }
-                        )
-
-                        // زر كشط ومزامنة
-                        SuggestionChip(
-                            onClick = {
-                                scope.launch {
-                                    toastMessage = "جارِ كشط محتويات الصفحة..."
-                                    val res = webUI.scrapeCurrentPage(router, webViewRef)
-                                    discoveredButtons = res.buttons
-                                    if ((res.wanBytes ?: 0L) > 0L) {
-                                        val updated = router.copy(accumulatedBytes = res.wanBytes!!)
-                                        onRouterUpdated(updated)
-                                        val gb = res.wanBytes!!.toDouble() / (1024.0 * 1024.0 * 1024.0)
-                                        toastMessage = "تم كشط الاستهلاك: ${String.format(java.util.Locale.US, "%.2f", gb)} GB"
-                                    } else {
-                                        toastMessage = "اكتمل الكشط: تم العثور على ${res.buttons.size} زر"
-                                    }
-                                }
-                            },
-                            label = { Text("كشط ومزامنة", fontSize = 11.sp) },
-                            icon = { Icon(Icons.Default.Sync, contentDescription = null, modifier = Modifier.size(14.dp), tint = Color(0xFF30D158)) }
-                        )
-
-                        // زر ضغط Reboot
-                        SuggestionChip(
-                            onClick = {
-                                scope.launch {
-                                    toastMessage = "جارِ الضغط على زر إعادة التشغيل..."
-                                    val (ok, msg) = webUI.pressButton(
-                                        profile = router,
-                                        selector = router.customRebootButtonSelector.takeIf { it.isNotBlank() },
-                                        semanticAction = SemanticButtonAction.REBOOT,
-                                        customWv = webViewRef
-                                    )
-                                    toastMessage = msg
-                                }
-                            },
-                            label = { Text("ضغط Reboot", fontSize = 11.sp) },
-                            icon = { Icon(Icons.Default.PowerSettingsNew, contentDescription = null, modifier = Modifier.size(14.dp), tint = Color(0xFFFF453A)) }
-                        )
-
-                        // زر قوالب الراوترات الجاهزة
-                        SuggestionChip(
-                            onClick = { showPresetsDialog = true },
-                            label = { Text("قوالب", fontSize = 11.sp) },
-                            icon = { Icon(Icons.Default.Layers, contentDescription = null, modifier = Modifier.size(14.dp), tint = Color(0xFFFF9F0A)) }
-                        )
-
-                        // زر الأزرار المكتشفة
-                        if (discoveredButtons.isNotEmpty()) {
-                            SuggestionChip(
-                                onClick = { showButtonsListDialog = true },
-                                label = { Text("الأزرار (${discoveredButtons.size})", fontSize = 11.sp) }
+                        IconButton(
+                            onClick = { webViewRef?.goBack() },
+                            enabled = canGoBack,
+                            modifier = Modifier.size(32.dp)
+                        ) {
+                            Icon(
+                                Icons.AutoMirrored.Filled.ArrowBack,
+                                contentDescription = "السابق",
+                                tint = if (canGoBack) Color.White else Color.Gray,
+                                modifier = Modifier.size(18.dp)
                             )
+                        }
+
+                        IconButton(
+                            onClick = { webViewRef?.goForward() },
+                            enabled = canGoForward,
+                            modifier = Modifier.size(32.dp)
+                        ) {
+                            Icon(
+                                Icons.AutoMirrored.Filled.ArrowForward,
+                                contentDescription = "التالي",
+                                tint = if (canGoForward) Color.White else Color.Gray,
+                                modifier = Modifier.size(18.dp)
+                            )
+                        }
+
+                        IconButton(
+                            onClick = { webViewRef?.reload() },
+                            modifier = Modifier.size(32.dp)
+                        ) {
+                            Icon(Icons.Default.Refresh, contentDescription = "تحديث", tint = Color(0xFF0A84FF), modifier = Modifier.size(18.dp))
+                        }
+
+                        Box(modifier = Modifier.width(1.dp).height(20.dp).background(Color(0xFF2C2C2E)))
+
+                        LazyRow(
+                            modifier = Modifier.weight(1f),
+                            horizontalArrangement = Arrangement.spacedBy(6.dp)
+                        ) {
+                            item {
+                                SuggestionChip(
+                                    onClick = {
+                                        scope.launch {
+                                            toastMessage = "جارٍ تعبئة بيانات الدخول..."
+                                            val ok = webUI.attemptAutoLogin(router.username, router.password, router, webViewRef)
+                                            toastMessage = if (ok) "تم إرسال بيانات الدخول بنجاح" else "لم يتم العثور على حقول الدخول"
+                                        }
+                                    },
+                                    label = { Text("دخول تلقائي", fontSize = 11.sp) },
+                                    icon = { Icon(Icons.Default.Key, contentDescription = null, modifier = Modifier.size(14.dp), tint = Color(0xFF0A84FF)) }
+                                )
+                            }
+                            item {
+                                SuggestionChip(
+                                    onClick = {
+                                        scope.launch {
+                                            toastMessage = "جارٍ كشط محتويات الصفحة..."
+                                            val res = webUI.scrapeCurrentPage(router, webViewRef)
+                                            discoveredButtons = res.buttons
+                                            if ((res.wanBytes ?: 0L) > 0L) {
+                                                val updated = router.copy(accumulatedBytes = res.wanBytes!!)
+                                                onRouterUpdated(updated)
+                                                val gb = res.wanBytes!!.toDouble() / (1024.0 * 1024.0 * 1024.0)
+                                                toastMessage = "تم كشط الاستهلاك: ${String.format(java.util.Locale.US, "%.2f", gb)} GB"
+                                            } else {
+                                                toastMessage = "اكتمل الكشط: تم العثور على ${res.buttons.size} زر"
+                                            }
+                                        }
+                                    },
+                                    label = { Text("كشط ومزامنة", fontSize = 11.sp) },
+                                    icon = { Icon(Icons.Default.Sync, contentDescription = null, modifier = Modifier.size(14.dp), tint = Color(0xFF30D158)) }
+                                )
+                            }
+                            item {
+                                SuggestionChip(
+                                    onClick = {
+                                        scope.launch {
+                                            toastMessage = "جارٍ الضغط على زر إعادة التشغيل..."
+                                            val (ok, msg) = webUI.pressButton(
+                                                profile = router,
+                                                selector = router.customRebootButtonSelector.takeIf { it.isNotBlank() },
+                                                semanticAction = SemanticButtonAction.REBOOT,
+                                                customWv = webViewRef
+                                            )
+                                            toastMessage = msg
+                                        }
+                                    },
+                                    label = { Text("إعادة التشغيل", fontSize = 11.sp, color = MaterialTheme.colorScheme.error) },
+                                    icon = { Icon(Icons.Default.PowerSettingsNew, contentDescription = null, modifier = Modifier.size(14.dp), tint = Color(0xFFFF453A)) }
+                                )
+                            }
+                            item {
+                                SuggestionChip(
+                                    onClick = { showPresetsDialog = true },
+                                    label = { Text("قوالب", fontSize = 11.sp) },
+                                    icon = { Icon(Icons.Default.Layers, contentDescription = null, modifier = Modifier.size(14.dp), tint = Color(0xFFFF9F0A)) }
+                                )
+                            }
+                            if (discoveredButtons.isNotEmpty()) {
+                                item {
+                                    SuggestionChip(
+                                        onClick = { showButtonsListDialog = true },
+                                        label = { Text("الأزرار (${discoveredButtons.size})", fontSize = 11.sp) }
+                                    )
+                                }
+                            }
                         }
                     }
 

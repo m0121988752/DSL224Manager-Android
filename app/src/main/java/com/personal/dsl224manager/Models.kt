@@ -14,46 +14,82 @@ data class NetworkDevice(
     val originalHostname: String,
     val customName: String? = null,
     val isOnline: Boolean = true,
-    var isBlocked: Boolean = false
+    val isBlocked: Boolean = false,
+    val isThrottled: Boolean = false,
+    val currentSpeedKbps: Int = 0,
+    val isTrusted: Boolean = false
 ) {
     val id: String get() = macAddress
     val displayName: String get() = customName?.takeIf { it.isNotBlank() } ?: originalHostname.takeIf { it.isNotBlank() } ?: macAddress
+    val speedLabel: String get() {
+        if (!isThrottled || currentSpeedKbps <= 0) return "كاملة"
+        return if (currentSpeedKbps >= 1024 && currentSpeedKbps % 1024 == 0) {
+            "${currentSpeedKbps / 1024} ميجا"
+        } else {
+            "$currentSpeedKbps ك.ب"
+        }
+    }
 }
+
+data class DailyUsageRecord(
+    val dateKey: String, // yyyy-MM-dd
+    val consumedGB: Double
+)
 
 data class RouterProfile(
     val id: String = UUID.randomUUID().toString(),
-    var name: String = "راوتر D-Link (DSL-224)",
-    var routerIP: String = "192.168.1.1",
-    var username: String = "admin",
-    var password: String = "",
-    var firmware: FirmwareType = FirmwareType.ME110_BOA,
-    var totalPlanGB: Double = 140.0,
-    var carrierName: String = "",
-    var liveDownloadRateKbps: Double = 0.0,
-    var liveUploadRateKbps: Double = 0.0,
-    var accumulatedBytes: Long = 0,
-    var devices: List<NetworkDevice> = emptyList(),
-    var enableWebUIFallback: Boolean = true,
-    var webUIPath: String = "",
+    val name: String = "راوتر D-Link (DSL-224)",
+    val routerIP: String = "192.168.1.1",
+    val username: String = "admin",
+    val password: String = "",
+    val firmware: FirmwareType = FirmwareType.ME110_BOA,
+    val totalPlanGB: Double = 140.0,
+    val renewalDay: Int = 1,
+    val manualOffsetGB: Double = 0.0,
+    val lastRecordedWANBytes: Long = 0L,
+    val accumulatedBytes: Long = 0L,
+    val lastResetMonth: Int = java.util.Calendar.getInstance().get(java.util.Calendar.MONTH) + 1,
+    val lastResetYear: Int = java.util.Calendar.getInstance().get(java.util.Calendar.YEAR),
+    val dailyHistory: List<DailyUsageRecord> = emptyList(),
+    val carrierName: String = "",
+    val liveDownloadRateKbps: Double = 0.0,
+    val liveUploadRateKbps: Double = 0.0,
+    val devices: List<NetworkDevice> = emptyList(),
+    val enableWebUIFallback: Boolean = true,
+    val webUIPath: String = "",
 
     // تخصيص الكشط المرئي بدون كود (No-Code Scraper Customization)
-    var customUsageSelector: String = "",
-    var customUsageRegex: String = "",
-    var customUsageUnit: String = "Auto", // Auto, GB, MB, Bytes
-    var customDeviceTableSelector: String = "",
-    var customRebootButtonSelector: String = "",
-    var customUsernameSelector: String = "",
-    var customPasswordSelector: String = "",
-    var customLoginButtonSelector: String = "",
+    val customUsageSelector: String = "",
+    val customUsageRegex: String = "",
+    val customUsageUnit: String = "Auto", // Auto, GB, MB, Bytes
+    val customDeviceTableSelector: String = "",
+    val customRebootButtonSelector: String = "",
+    val customUsernameSelector: String = "",
+    val customPasswordSelector: String = "",
+    val customLoginButtonSelector: String = "",
 
     // إعدادات وضع شبكة الجوال والتحويل التلقائي لراوترات Huawei HiLink
-    var networkMode: String = "00", // "00": تلقائي, "03": 4G فقط, "02": 3G فقط
-    var autoSwitchTo3GOnLowSpeed: Boolean = false,
-    var lowSpeedThresholdKbps: Double = 150.0
+    val networkMode: String = "00", // "00": تلقائي, "03": 4G فقط, "02": 3G فقط
+    val autoSwitchTo3GOnLowSpeed: Boolean = false,
+    val lowSpeedThresholdKbps: Double = 150.0
 ) {
-    val usedGB: Double get() = accumulatedBytes.toDouble() / (1024.0 * 1024.0 * 1024.0)
+    val accumulatedGB: Double get() = accumulatedBytes.toDouble() / (1024.0 * 1024.0 * 1024.0)
+    val usedGB: Double get() = (manualOffsetGB + accumulatedGB).coerceAtLeast(0.0)
     val remainingGB: Double get() = (totalPlanGB - usedGB).coerceAtLeast(0.0)
     val usedPercentage: Double get() = if (totalPlanGB > 0) ((usedGB / totalPlanGB) * 100).coerceIn(0.0, 100.0) else 0.0
+    val daysUntilRenewal: Int get() {
+        val cal = java.util.Calendar.getInstance()
+        val currentDay = cal.get(java.util.Calendar.DAY_OF_MONTH)
+        val maxDays = cal.getActualMaximum(java.util.Calendar.DAY_OF_MONTH)
+        return if (renewalDay > currentDay) {
+            renewalDay - currentDay
+        } else if (renewalDay == currentDay) {
+            maxDays
+        } else {
+            (maxDays - currentDay) + renewalDay
+        }
+    }
+    val recommendedDailyGB: Double get() = remainingGB / daysUntilRenewal.coerceAtLeast(1)
 }
 
 enum class ElementAssignmentAction {

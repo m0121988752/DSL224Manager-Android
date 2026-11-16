@@ -27,6 +27,18 @@ class WebUIFallbackService(private val context: Context) {
     private var headlessWebView: WebView? = null
     private val mainHandler = Handler(Looper.getMainLooper())
 
+    fun destroy() {
+        try {
+            headlessWebView?.apply {
+                stopLoading()
+                clearHistory()
+                removeAllViews()
+                destroy()
+            }
+            headlessWebView = null
+        } catch (_: Exception) {}
+    }
+
     private fun getOrCreateWebView(): WebView {
         if (headlessWebView == null) {
             headlessWebView = WebView(context).apply {
@@ -418,8 +430,7 @@ class WebUIFallbackService(private val context: Context) {
                         'input[name="reboot"]',
                         'button[name="reboot"]',
                         'input[value*="Reboot" i]',
-                        'input[value*="إعادة" i]',
-                        'button:contains("إعادة التشغيل")'
+                        'input[value*="إعادة" i]'
                     ];
                     if ("$customReboot".length > 0) {
                         rebootCandidates.unshift("$customReboot");
@@ -490,7 +501,7 @@ class WebUIFallbackService(private val context: Context) {
         wv.evaluateJavascript(script) { result ->
             val unquoted = if (result != null && result.startsWith("\"") && result.endsWith("\"") && result.length >= 2) {
                 try {
-                    JSONObject("\"str\":$result").getString("str")
+                    JSONObject("{\"str\":$result}").getString("str")
                 } catch (e: Exception) {
                     result.substring(1, result.length - 1).replace("\\\"", "\"").replace("\\\\", "\\")
                 }

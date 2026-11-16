@@ -27,12 +27,28 @@ class RouterStorage(context: Context) {
                 put("password", profile.password)
                 put("firmware", profile.firmware.name)
                 put("totalPlanGB", profile.totalPlanGB)
+                put("renewalDay", profile.renewalDay)
+                put("manualOffsetGB", profile.manualOffsetGB)
+                put("lastRecordedWANBytes", profile.lastRecordedWANBytes)
+                put("lastResetMonth", profile.lastResetMonth)
+                put("lastResetYear", profile.lastResetYear)
                 put("carrierName", profile.carrierName)
                 put("liveDownloadRateKbps", profile.liveDownloadRateKbps)
                 put("liveUploadRateKbps", profile.liveUploadRateKbps)
                 put("accumulatedBytes", profile.accumulatedBytes)
                 put("enableWebUIFallback", profile.enableWebUIFallback)
                 put("webUIPath", profile.webUIPath)
+
+                // سجل الاستهلاك اليومي (30 يوماً)
+                val histArr = JSONArray()
+                profile.dailyHistory.forEach { h ->
+                    val hObj = JSONObject().apply {
+                        put("dateKey", h.dateKey)
+                        put("consumedGB", h.consumedGB)
+                    }
+                    histArr.put(hObj)
+                }
+                put("dailyHistory", histArr)
 
                 // إعدادات الكشط المخصص (No-Code Scraper Config)
                 put("customUsageSelector", profile.customUsageSelector)
@@ -59,6 +75,9 @@ class RouterStorage(context: Context) {
                         put("customName", dev.customName ?: "")
                         put("isOnline", dev.isOnline)
                         put("isBlocked", dev.isBlocked)
+                        put("isThrottled", dev.isThrottled)
+                        put("currentSpeedKbps", dev.currentSpeedKbps)
+                        put("isTrusted", dev.isTrusted)
                     }
                     devsArr.put(devObj)
                 }
@@ -117,7 +136,24 @@ class RouterStorage(context: Context) {
                                 originalHostname = dObj.optString("originalHostname", ""),
                                 customName = dObj.optString("customName").takeIf { it.isNotBlank() },
                                 isOnline = dObj.optBoolean("isOnline", true),
-                                isBlocked = dObj.optBoolean("isBlocked", false)
+                                isBlocked = dObj.optBoolean("isBlocked", false),
+                                isThrottled = dObj.optBoolean("isThrottled", false),
+                                currentSpeedKbps = dObj.optInt("currentSpeedKbps", 0),
+                                isTrusted = dObj.optBoolean("isTrusted", false)
+                            )
+                        )
+                    }
+                }
+
+                val histList = mutableListOf<DailyUsageRecord>()
+                val histArr = obj.optJSONArray("dailyHistory")
+                if (histArr != null) {
+                    for (h in 0 until histArr.length()) {
+                        val hObj = histArr.getJSONObject(h)
+                        histList.add(
+                            DailyUsageRecord(
+                                dateKey = hObj.optString("dateKey", ""),
+                                consumedGB = hObj.optDouble("consumedGB", 0.0)
                             )
                         )
                     }
@@ -132,6 +168,13 @@ class RouterStorage(context: Context) {
                         password = obj.optString("password", ""),
                         firmware = firmware,
                         totalPlanGB = obj.optDouble("totalPlanGB", 140.0),
+                        renewalDay = obj.optInt("renewalDay", 1),
+                        manualOffsetGB = obj.optDouble("manualOffsetGB", 0.0),
+                        lastRecordedWANBytes = obj.optLong("lastRecordedWANBytes", 0L),
+                        accumulatedBytes = obj.optLong("accumulatedBytes", 0L),
+                        lastResetMonth = obj.optInt("lastResetMonth", java.util.Calendar.getInstance().get(java.util.Calendar.MONTH) + 1),
+                        lastResetYear = obj.optInt("lastResetYear", java.util.Calendar.getInstance().get(java.util.Calendar.YEAR)),
+                        dailyHistory = histList,
                         carrierName = obj.optString("carrierName", ""),
                         liveDownloadRateKbps = obj.optDouble("liveDownloadRateKbps", 0.0),
                         liveUploadRateKbps = obj.optDouble("liveUploadRateKbps", 0.0),
