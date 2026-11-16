@@ -26,8 +26,27 @@ jobs:
     - name: Grant execute permission for gradlew
       run: chmod +x gradlew || true
 
+    - name: Setup Signing Keystore from Secrets
+      env:
+        RELEASE_KEYSTORE_BASE64: ${{ secrets.RELEASE_KEYSTORE_BASE64 }}
+      run: |
+        mkdir -p app/keystore
+        if [ -n "$RELEASE_KEYSTORE_BASE64" ]; then
+          echo "$RELEASE_KEYSTORE_BASE64" | base64 -d > app/keystore/release.jks
+          echo "Keystore successfully decoded from GitHub Secrets."
+        else
+          echo "Warning: RELEASE_KEYSTORE_BASE64 secret is not configured."
+        fi
+
     - name: Build with Gradle
+      env:
+        RELEASE_KEYSTORE_PASSWORD: ${{ secrets.RELEASE_KEYSTORE_PASSWORD }}
+        RELEASE_KEY_ALIAS: ${{ secrets.RELEASE_KEY_ALIAS }}
+        RELEASE_KEY_PASSWORD: ${{ secrets.RELEASE_KEY_PASSWORD }}
       run: ./gradlew assembleRelease assembleDebug --no-daemon --stacktrace
+
+    - name: Clean Keystore File
+      run: rm -f app/keystore/release.jks
 
     - name: Prepare Artifacts
       run: |
@@ -56,8 +75,9 @@ jobs:
         echo "Publishing GitHub Release $TAG_NAME"
         cat << 'EOF' > release_notes.md
         ### ما الجديد في هذا التحديث (What's New):
-        * توقيع رقمي دائم ومعتمد (Release Keystore) ممتد حتى عام 2054
-        * دعم التحديث التلقائي الفوري والتثبيت المباشر دون الحاجة لحذف التطبيق
+        * توقيع رقمي دائم وآمن عبر أسرار GitHub المعتمدة (GitHub Secrets) حتى عام 2056
+        * عزل وتأمين مفتاح التوقيع الرقمي بالكامل لمنع تسريبه وضمان موثوقية التحديثات
+        * دعم التحديث التلقائي الفوري والتثبيت المباشر دون الحاجة لحذف التطبيق بعد هذا الإصدار
         * نافذة ما الجديد (What's New) التفاعلية داخل التطبيق وفحص أحدث الإصدارات
         * واجهة إعدادات عصرية بنمط Material 3 مع شرائح تحديد سعة الباقة السريعة
         * تحسين استخراج السرعات الحية والتعامل مع راوترات D-Link و Huawei

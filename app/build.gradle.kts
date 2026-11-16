@@ -17,22 +17,34 @@ android {
         versionName = "1.1.$ciRunNumber"
     }
 
+    val keystoreFile = rootProject.file("app/keystore/release.jks")
+    val hasKeystore = keystoreFile.exists()
+    val releaseStorePassword = System.getenv("RELEASE_KEYSTORE_PASSWORD") ?: ""
+    val releaseKeyAlias = System.getenv("RELEASE_KEY_ALIAS") ?: "dsl224_release_key"
+    val releaseKeyPassword = System.getenv("RELEASE_KEY_PASSWORD") ?: ""
+
     signingConfigs {
-        create("release") {
-            storeFile = rootProject.file("app/keystore/release.jks")
-            storePassword = "dsl224manager"
-            keyAlias = "dsl224key"
-            keyPassword = "dsl224manager"
+        if (hasKeystore && releaseStorePassword.isNotEmpty()) {
+            create("release") {
+                storeFile = keystoreFile
+                storePassword = releaseStorePassword
+                keyAlias = releaseKeyAlias
+                keyPassword = releaseKeyPassword
+            }
         }
     }
 
     buildTypes {
         debug {
-            signingConfig = signingConfigs.getByName("release")
+            if (hasKeystore && releaseStorePassword.isNotEmpty()) {
+                signingConfig = signingConfigs.getByName("release")
+            }
         }
         release {
             isMinifyEnabled = false
-            signingConfig = signingConfigs.getByName("release")
+            if (hasKeystore && releaseStorePassword.isNotEmpty()) {
+                signingConfig = signingConfigs.getByName("release")
+            }
             proguardFiles(
                 getDefaultProguardFile("proguard-android-optimize.txt"),
                 "proguard-rules.pro"

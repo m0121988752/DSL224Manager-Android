@@ -1,0 +1,17 @@
+*.iml
+.gradle
+/local.properties
+/.idea/
+.DS_Store
+/build
+/captures
+.externalNativeBuild
+.cxx
+local.properties
+
+# Android Keystores & Signing Keys (Strictly keep out of Git)
+*.jks
+*.keystore
+app/keystore/
+dist/
+release_notes.md
